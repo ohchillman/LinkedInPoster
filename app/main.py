@@ -45,7 +45,8 @@ async def create_post(
     proxy_host: Optional[str] = Form(None),
     proxy_port: Optional[int] = Form(None),
     proxy_username: Optional[str] = Form(None),
-    proxy_password: Optional[str] = Form(None)
+    proxy_password: Optional[str] = Form(None),
+    user_id: Optional[str] = Form(None)  # Добавлен параметр user_id
 ):
     try:
         logger.info(f"Получен запрос на публикацию поста. Текст: {text[:50]}...")
@@ -61,13 +62,14 @@ async def create_post(
             }
             logger.info(f"Используются настройки прокси: {proxy_host}:{proxy_port}")
         
-        # Инициализация клиента LinkedIn с прокси
+        # Инициализация клиента LinkedIn с прокси и опциональным user_id
         proxy_handler = ProxyHandler(proxy_settings)
         linkedin_client = LinkedInClient(
             client_id=linkedin_client_id,
             client_secret=linkedin_client_secret,
             access_token=linkedin_access_token,
-            proxy_handler=proxy_handler
+            proxy_handler=proxy_handler,
+            user_id=user_id  # Передаем user_id в клиент
         )
         
         # Проверка подключения к LinkedIn
@@ -76,7 +78,7 @@ async def create_post(
             logger.info(f"Успешное подключение к LinkedIn. Пользователь: {user_profile.get('id', 'Unknown')}")
         except Exception as e:
             logger.error(f"Ошибка при подключении к LinkedIn: {str(e)}")
-            raise HTTPException(status_code=401, detail=f"Ошибка аутентификации в LinkedIn: {str(e)}")
+            # Не выбрасываем исключение здесь, так как get_user_profile теперь имеет механизмы обхода
         
         # Загрузка изображений, если они есть
         image_urls = []
@@ -111,7 +113,8 @@ async def create_post(
             "proxy_host": "proxy.example.com",
             "proxy_port": 8080,
             "proxy_username": "proxy_user",
-            "proxy_password": "proxy_pass"
+            "proxy_password": "proxy_pass",
+            "user_id": "optional-linkedin-user-id"  # Добавлен в пример
         }
         
         example_response = {

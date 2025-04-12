@@ -106,6 +106,13 @@
             margin: 15px 0;
             border-radius: 0 4px 4px 0;
         }
+        .new-feature {
+            background-color: #e8f5e9;
+            border-left: 4px solid #4caf50;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 0 4px 4px 0;
+        }
     </style>
 </head>
 <body>
@@ -122,7 +129,6 @@
                 <h3>Требования к токену доступа LinkedIn</h3>
                 <p>Для корректной работы API, ваш токен доступа LinkedIn должен иметь следующие разрешения:</p>
                 <ul>
-                    <li><strong>r_liteprofile</strong> - для доступа к информации о профиле</li>
                     <li><strong>w_member_social</strong> - для публикации постов</li>
                 </ul>
                 <p>Если вы получаете ошибки авторизации, убедитесь, что ваш токен:</p>
@@ -132,6 +138,16 @@
                     <li>Получен для правильного приложения LinkedIn</li>
                 </ul>
                 <p><a href="https://www.linkedin.com/developers/apps" target="_blank">Перейдите в консоль разработчика LinkedIn</a> для управления вашими приложениями и токенами.</p>
+            </div>
+            
+            <div class="new-feature">
+                <h3>Новая функция: Указание ID пользователя LinkedIn</h3>
+                <p>Если у вас возникают проблемы с доступом к профилю через API LinkedIn, вы можете указать ваш ID пользователя LinkedIn напрямую:</p>
+                <ul>
+                    <li>Параметр <strong>user_id</strong> позволяет обойти необходимость запроса к профилю</li>
+                    <li>Это особенно полезно, если ваш токен не имеет разрешения r_liteprofile</li>
+                </ul>
+                <p>Ваш ID пользователя LinkedIn можно найти в URL вашего профиля или в консоли разработчика.</p>
             </div>
             
             <h3>Пример запроса:</h3>
@@ -149,6 +165,7 @@ proxy_host: (опционально) хост прокси
 proxy_port: (опционально) порт прокси
 proxy_username: (опционально) имя пользователя прокси
 proxy_password: (опционально) пароль прокси
+user_id: (опционально) ваш ID пользователя LinkedIn
 </pre>
             </div>
             
@@ -167,7 +184,7 @@ proxy_password: (опционально) пароль прокси
             <div class="example">
 <pre>
 {
-    "detail": "Не удалось получить профиль пользователя LinkedIn. Убедитесь, что токен доступа действителен и имеет разрешение r_liteprofile. Ошибка: Ошибка авторизации: недостаточно прав для выполнения операции. Токен должен иметь разрешения: r_liteprofile, w_member_social."
+    "detail": "Не удалось создать пост в LinkedIn. Убедитесь, что токен доступа действителен и имеет разрешение w_member_social."
 }
 </pre>
             </div>
@@ -179,8 +196,14 @@ proxy_password: (опционально) пароль прокси
         <div id="testForm" class="section">
             <div class="info-box">
                 <h3>Важная информация о токене LinkedIn</h3>
-                <p>Для успешной публикации постов, убедитесь, что ваш токен доступа имеет разрешения <strong>r_liteprofile</strong> и <strong>w_member_social</strong>.</p>
+                <p>Для успешной публикации постов, убедитесь, что ваш токен доступа имеет разрешение <strong>w_member_social</strong>.</p>
                 <p>Если вы получаете ошибки авторизации, вам может потребоваться создать новое приложение в <a href="https://www.linkedin.com/developers/apps" target="_blank">консоли разработчика LinkedIn</a> и получить новый токен с правильными разрешениями.</p>
+            </div>
+            
+            <div class="new-feature">
+                <h3>Новая функция: Обход проблем с доступом к профилю</h3>
+                <p>Если у вас возникают ошибки с доступом к профилю, вы можете указать ваш ID пользователя LinkedIn в поле ниже.</p>
+                <p>Это позволит сервису публиковать посты даже если токен не имеет разрешения r_liteprofile.</p>
             </div>
             
             <form id="linkedinForm" enctype="multipart/form-data">
@@ -197,6 +220,10 @@ proxy_password: (опционально) пароль прокси
                     <div class="form-group">
                         <label for="linkedin_access_token">Access Token:</label>
                         <input type="text" id="linkedin_access_token" name="linkedin_access_token" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="user_id">ID пользователя LinkedIn (опционально):</label>
+                        <input type="text" id="user_id" name="user_id" placeholder="Например: abcd1234">
                     </div>
                 </div>
                 
