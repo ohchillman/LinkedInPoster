@@ -113,6 +113,17 @@
             margin: 15px 0;
             border-radius: 0 4px 4px 0;
         }
+        .security-box {
+            background-color: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 0 4px 4px 0;
+        }
+        .required:after {
+            content: " *";
+            color: #f44336;
+        }
     </style>
 </head>
 <body>
@@ -140,8 +151,15 @@
                 <p><a href="https://www.linkedin.com/developers/apps" target="_blank">Перейдите в консоль разработчика LinkedIn</a> для управления вашими приложениями и токенами.</p>
             </div>
             
+            <div class="security-box">
+                <h3>Требование использования прокси</h3>
+                <p>В целях безопасности, для публикации постов <strong>обязательно</strong> требуется использование прокси.</p>
+                <p>Параметры <code>proxy_host</code> и <code>proxy_port</code> являются обязательными для всех запросов.</p>
+                <p>Параметры <code>proxy_username</code> и <code>proxy_password</code> опциональны и используются для прокси с аутентификацией.</p>
+            </div>
+            
             <div class="new-feature">
-                <h3>Новая функция: Указание ID пользователя LinkedIn</h3>
+                <h3>Функция: Указание ID пользователя LinkedIn</h3>
                 <p>Если у вас возникают проблемы с доступом к профилю через API LinkedIn, вы можете указать ваш ID пользователя LinkedIn напрямую:</p>
                 <ul>
                     <li>Параметр <strong>user_id</strong> позволяет обойти необходимость запроса к профилю</li>
@@ -161,8 +179,8 @@ linkedin_client_secret: YOUR_CLIENT_SECRET
 linkedin_access_token: YOUR_ACCESS_TOKEN
 text: Текст вашего поста
 images: [файлы изображений]
-proxy_host: (опционально) хост прокси
-proxy_port: (опционально) порт прокси
+proxy_host: proxy.example.com (обязательно)
+proxy_port: 8080 (обязательно)
 proxy_username: (опционально) имя пользователя прокси
 proxy_password: (опционально) пароль прокси
 user_id: (опционально) ваш ID пользователя LinkedIn
@@ -184,7 +202,7 @@ user_id: (опционально) ваш ID пользователя LinkedIn
             <div class="example">
 <pre>
 {
-    "detail": "Не удалось создать пост в LinkedIn. Убедитесь, что токен доступа действителен и имеет разрешение w_member_social."
+    "detail": "Для публикации постов требуется использование прокси. Пожалуйста, укажите proxy_host и proxy_port."
 }
 </pre>
             </div>
@@ -200,8 +218,14 @@ user_id: (опционально) ваш ID пользователя LinkedIn
                 <p>Если вы получаете ошибки авторизации, вам может потребоваться создать новое приложение в <a href="https://www.linkedin.com/developers/apps" target="_blank">консоли разработчика LinkedIn</a> и получить новый токен с правильными разрешениями.</p>
             </div>
             
+            <div class="security-box">
+                <h3>Обязательное использование прокси</h3>
+                <p>В целях безопасности, для публикации постов <strong>обязательно</strong> требуется использование прокси.</p>
+                <p>Поля "Хост прокси" и "Порт прокси" должны быть заполнены.</p>
+            </div>
+            
             <div class="new-feature">
-                <h3>Новая функция: Обход проблем с доступом к профилю</h3>
+                <h3>Функция: Обход проблем с доступом к профилю</h3>
                 <p>Если у вас возникают ошибки с доступом к профилю, вы можете указать ваш ID пользователя LinkedIn в поле ниже.</p>
                 <p>Это позволит сервису публиковать посты даже если токен не имеет разрешения r_liteprofile.</p>
             </div>
@@ -210,15 +234,15 @@ user_id: (опционально) ваш ID пользователя LinkedIn
                 <div class="section">
                     <h3>Данные LinkedIn</h3>
                     <div class="form-group">
-                        <label for="linkedin_client_id">Client ID:</label>
+                        <label for="linkedin_client_id" class="required">Client ID:</label>
                         <input type="text" id="linkedin_client_id" name="linkedin_client_id" required>
                     </div>
                     <div class="form-group">
-                        <label for="linkedin_client_secret">Client Secret:</label>
+                        <label for="linkedin_client_secret" class="required">Client Secret:</label>
                         <input type="text" id="linkedin_client_secret" name="linkedin_client_secret" required>
                     </div>
                     <div class="form-group">
-                        <label for="linkedin_access_token">Access Token:</label>
+                        <label for="linkedin_access_token" class="required">Access Token:</label>
                         <input type="text" id="linkedin_access_token" name="linkedin_access_token" required>
                     </div>
                     <div class="form-group">
@@ -230,7 +254,7 @@ user_id: (опционально) ваш ID пользователя LinkedIn
                 <div class="section">
                     <h3>Содержимое поста</h3>
                     <div class="form-group">
-                        <label for="text">Текст поста:</label>
+                        <label for="text" class="required">Текст поста:</label>
                         <textarea id="text" name="text" required></textarea>
                     </div>
                     <div class="form-group">
@@ -240,21 +264,21 @@ user_id: (опционально) ваш ID пользователя LinkedIn
                 </div>
                 
                 <div class="section">
-                    <h3>Настройки прокси (опционально)</h3>
+                    <h3>Настройки прокси (обязательно)</h3>
                     <div class="form-group">
-                        <label for="proxy_host">Хост прокси:</label>
-                        <input type="text" id="proxy_host" name="proxy_host">
+                        <label for="proxy_host" class="required">Хост прокси:</label>
+                        <input type="text" id="proxy_host" name="proxy_host" required>
                     </div>
                     <div class="form-group">
-                        <label for="proxy_port">Порт прокси:</label>
-                        <input type="number" id="proxy_port" name="proxy_port">
+                        <label for="proxy_port" class="required">Порт прокси:</label>
+                        <input type="number" id="proxy_port" name="proxy_port" required>
                     </div>
                     <div class="form-group">
-                        <label for="proxy_username">Имя пользователя прокси:</label>
+                        <label for="proxy_username">Имя пользователя прокси (опционально):</label>
                         <input type="text" id="proxy_username" name="proxy_username">
                     </div>
                     <div class="form-group">
-                        <label for="proxy_password">Пароль прокси:</label>
+                        <label for="proxy_password">Пароль прокси (опционально):</label>
                         <input type="text" id="proxy_password" name="proxy_password">
                     </div>
                 </div>
@@ -306,6 +330,10 @@ user_id: (опционально) ваш ID пользователя LinkedIn
             document.getElementById('linkedin_client_secret').value = 'WPL_AP1.ARovOXo3zn47GqXx.vOc/fQ==';
             document.getElementById('linkedin_access_token').value = 'AQXvrVELQD9ejVhtt87cHjBrzGHNuhBmdmE8KcFM5aChxhnPxgHY2fpZrdO7n8T61ReFl8x0ncZ7fPYfhyVcL1FmMfleq-oHOZ5hxhYFyP9Q9Qbj5L5_ld-oBCPjmx5FNopFMQIn5H073ZPnw2pziv6ejMch0NmsB3Uhiy-1RF9tgz_vBNBm7pMR5h389zP2e6wrPcOG3johfmtdQH064-NYuwVWHpOWKcMqpdM_rcOyaql5UUNGlynwBKhrgQF3d0zHYrz6P8GO1TrbOIQNgFx0sbvs7fwJLDfY2aR7B1EI3gQvu3g3_8-L1Usx7d_LgqWxV11GqHawS6SLqgMl-PK4JHVl9g';
             document.getElementById('text').value = 'Тестовый пост из LinkedIn Poster API';
+            document.getElementById('proxy_host').value = '109.236.82.42';
+            document.getElementById('proxy_port').value = '9999';
+            document.getElementById('proxy_username').value = 'cpvbnd3wfl-corp.mobile-country-MD-state-618069-hold-session-session-67efeca1c7365';
+            document.getElementById('proxy_password').value = 'FxOQ5x8ym6c1GQfh';
         });
     </script>
 </body>

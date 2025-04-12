@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="LinkedIn Poster API", 
-              description="API для публикации контента в LinkedIn с поддержкой прокси",
+              description="API для публикации контента в LinkedIn с обязательной поддержкой прокси",
               version="1.0.0")
 
 app.add_middleware(
@@ -42,25 +42,28 @@ async def create_post(
     linkedin_access_token: str = Form(...),
     text: str = Form(...),
     images: List[UploadFile] = File(None),
-    proxy_host: Optional[str] = Form(None),
-    proxy_port: Optional[int] = Form(None),
+    proxy_host: str = Form(...),  # Теперь обязательный параметр
+    proxy_port: int = Form(...),  # Теперь обязательный параметр
     proxy_username: Optional[str] = Form(None),
     proxy_password: Optional[str] = Form(None),
-    user_id: Optional[str] = Form(None)  # Добавлен параметр user_id
+    user_id: Optional[str] = Form(None)
 ):
     try:
         logger.info(f"Получен запрос на публикацию поста. Текст: {text[:50]}...")
         
-        # Настройка прокси, если указаны
-        proxy_settings = None
-        if proxy_host and proxy_port:
-            proxy_settings = {
-                "host": proxy_host,
-                "port": proxy_port,
-                "username": proxy_username,
-                "password": proxy_password
-            }
-            logger.info(f"Используются настройки прокси: {proxy_host}:{proxy_port}")
+        # Проверка наличия прокси (теперь обязательно)
+        if not proxy_host or not proxy_port:
+            logger.error("Отсутствуют обязательные настройки прокси")
+            raise HTTPException(status_code=400, detail="Для публикации постов требуется использование прокси. Пожалуйста, укажите proxy_host и proxy_port.")
+        
+        # Настройка прокси
+        proxy_settings = {
+            "host": proxy_host,
+            "port": proxy_port,
+            "username": proxy_username,
+            "password": proxy_password
+        }
+        logger.info(f"Используются настройки прокси: {proxy_host}:{proxy_port}")
         
         # Инициализация клиента LinkedIn с прокси и опциональным user_id
         proxy_handler = ProxyHandler(proxy_settings)
@@ -69,7 +72,7 @@ async def create_post(
             client_secret=linkedin_client_secret,
             access_token=linkedin_access_token,
             proxy_handler=proxy_handler,
-            user_id=user_id  # Передаем user_id в клиент
+            user_id=user_id
         )
         
         # Проверка подключения к LinkedIn
@@ -110,11 +113,11 @@ async def create_post(
             "linkedin_access_token": "YOUR_ACCESS_TOKEN",
             "text": "Текст вашего поста",
             "images": ["image1.jpg", "image2.jpg"],
-            "proxy_host": "proxy.example.com",
-            "proxy_port": 8080,
+            "proxy_host": "proxy.example.com",  # Обязательный параметр
+            "proxy_port": 8080,                 # Обязательный параметр
             "proxy_username": "proxy_user",
             "proxy_password": "proxy_pass",
-            "user_id": "optional-linkedin-user-id"  # Добавлен в пример
+            "user_id": "optional-linkedin-user-id"
         }
         
         example_response = {
