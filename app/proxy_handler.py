@@ -1,4 +1,8 @@
 from typing import Dict, Optional
+import requests
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ProxyHandler:
     """
@@ -16,12 +20,13 @@ class ProxyHandler:
             - password: пароль для авторизации (опционально)
         """
         self.proxy_settings = proxy_settings
+        self.is_proxy_working = None  # None означает, что прокси еще не проверялся
     
     def get_proxies(self) -> Dict:
         """
         Возвращает словарь с настройками прокси для использования в requests
         
-        :return: Словарь с настройками прокси или пустой словарь, если прокси не настроены
+        :return: Словарь с настройками прокси или пустой словарь, если прокси не настроены или не работают
         """
         if not self.proxy_settings:
             return {}
@@ -44,10 +49,56 @@ class ProxyHandler:
         
         proxy_url += f"{host}:{port}"
         
+        # Если прокси уже проверен и не работает, возвращаем пустой словарь
+        if self.is_proxy_working is False:
+            logger.warning(f"Прокси {host}:{port} не работает, запросы будут выполняться без прокси")
+            return {}
+        
         return {
             "http": proxy_url,
             "https": proxy_url
         }
+    
+    def check_proxy(self, timeout: int = 5) -> bool:
+        """
+        Проверяет работоспособность прокси
+        
+        :param timeout: Таймаут для проверки прокси в секундах
+        :return: True если прокси работает, False в противном случае
+        """
+        if not self.proxy_settings:
+            # Если прокси не настроен, считаем что "работает" (т.е. не используется)
+            self.is_proxy_working = True
+            return True
+        
+        proxies = self.get_proxies()
+        if not proxies:
+            self.is_proxy_working = False
+            return False
+        
+        try:
+            logger.info(f"Проверка работоспособности прокси: {proxies}")
+            # Используем LinkedIn API для проверки, так как это наиболее релевантно
+            test_url = "https://api.linkedin.com/v2/me"
+            
+            # Делаем запрос с таймаутом
+            response = requests.get(
+                test_url,
+                proxies=proxies,
+                timeout=timeout,
+                # Не проверяем статус ответа, только соединение
+                allow_redirects=False
+            )
+            
+            # Если получили какой-то ответ (даже ошибку авторизации), значит прокси работает
+            self.is_proxy_working = True
+            logger.info(f"Прокси работает, получен ответ с кодом: {response.status_code}")
+            return True
+            
+        except requests.RequestException as e:
+            logger.error(f"Прокси не работает: {str(e)}")
+            self.is_proxy_working = False
+            return False
     
     def apply_to_session(self, session):
         """
@@ -56,6 +107,10 @@ class ProxyHandler:
         :param session: Объект сессии requests
         :return: Сессия с примененными настройками прокси
         """
+        # Проверяем прокси перед применением
+        if self.is_proxy_working is None:
+            self.check_proxy()
+            
         proxies = self.get_proxies()
         if proxies:
             session.proxies.update(proxies)

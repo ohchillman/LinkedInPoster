@@ -3,7 +3,6 @@ from typing import List, Optional, Dict
 from app.proxy_handler import ProxyHandler
 import json
 import logging
-import re
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +42,8 @@ class LinkedInClient:
                 data=data,
                 files=files,
                 json=json,
-                proxies=proxies
+                proxies=proxies,
+                timeout=30  # Добавляем таймаут для предотвращения бесконечной загрузки
             )
             
             logger.info(f"Получен ответ от API LinkedIn: {response.status_code}")
@@ -136,22 +136,65 @@ class LinkedInClient:
             user_id = user_profile["id"]
             logger.info(f"ID пользователя LinkedIn: {user_id}")
             
-            # Шаг 1: Инициализация загрузки изображения
+            # Шаг 1: Инициализация загрузки изображения с расширенными разрешениями
             register_endpoint = "/assets?action=registerUpload"
+            
+            # Обновленный запрос с дополнительными параметрами для поддержки PNG и других форматов
             register_data = {
                 "registerUploadRequest": {
-                    "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
+                    "recipes": [
+                        "urn:li:digitalmediaRecipe:feedshare-image"
+                    ],
                     "owner": f"urn:li:person:{user_id}",
                     "serviceRelationships": [
                         {
                             "relationshipType": "OWNER",
                             "identifier": "urn:li:userGeneratedContent"
                         }
-                    ]
+                    ],
+                    "supportedUploadMechanism": ["SYNCHRONOUS_UPLOAD"]
                 }
             }
             
-            upload_info = self._make_request("POST", register_endpoint, json=register_data)
+            # Добавляем расширенные заголовки для запроса на регистрацию загрузки
+            upload_headers = self.headers.copy()
+            upload_headers["Content-Type"] = "application/json"
+            upload_headers["X-Restli-Protocol-Version"] = "2.0.0"
+            
+            # Выполняем запрос с обновленными заголовками
+            url = f"{self.base_url}{register_endpoint}"
+            proxies = self.proxy_handler.get_proxies()
+            
+            logger.info(f"Отправка POST запроса для регистрации загрузки к {url}")
+            if proxies:
+                logger.info(f"Используются прокси: {proxies}")
+            
+            try:
+                response = requests.post(
+                    url=url,
+                    headers=upload_headers,
+                    json=register_data,
+                    proxies=proxies,
+                    timeout=30
+                )
+                
+                logger.info(f"Получен ответ от API LinkedIn: {response.status_code}")
+                
+                if response.status_code >= 400:
+                    error_message = f"LinkedIn API error: {response.status_code} - {response.text}"
+                    logger.error(f"Ошибка API LinkedIn при регистрации загрузки: {error_message}")
+                    
+                    if response.status_code == 403:
+                        logger.error("Ошибка доступа 403. Проверьте, что токен имеет разрешения: r_liteprofile, w_member_social")
+                        raise Exception(f"Ошибка авторизации: недостаточно прав для выполнения операции. Токен должен иметь разрешения: r_liteprofile, w_member_social. {response.text}")
+                    else:
+                        raise Exception(error_message)
+                
+                upload_info = response.json()
+            except requests.RequestException as e:
+                logger.error(f"Ошибка сетевого запроса при регистрации загрузки: {str(e)}")
+                raise Exception(f"Ошибка сетевого запроса при регистрации загрузки: {str(e)}")
+            
             logger.info("Получена информация для загрузки изображения")
             
             # Шаг 2: Загрузка изображения по полученному URL
@@ -164,13 +207,29 @@ class LinkedInClient:
             logger.info(f"URL для загрузки изображения: {upload_url}")
             logger.info(f"ID ресурса: {asset_id}")
             
-            # Загрузка изображения на полученный URL
+            # Определяем тип контента на основе расширения файла
+            content_type = "application/octet-stream"
+            if filename.lower().endswith('.jpg') or filename.lower().endswith('.jpeg'):
+                content_type = "image/jpeg"
+            elif filename.lower().endswith('.png'):
+                content_type = "image/png"
+            elif filename.lower().endswith('.gif'):
+                content_type = "image/gif"
+            
+            # Загрузка изображения на полученный URL с правильным Content-Type
             proxies = self.proxy_handler.get_proxies()
+            upload_headers = {
+                "Content-Type": content_type
+            }
+            
+            logger.info(f"Загрузка изображения с Content-Type: {content_type}")
+            
             upload_response = requests.put(
                 url=upload_url,
                 data=image_data,
-                headers={"Content-Type": "application/octet-stream"},
-                proxies=proxies
+                headers=upload_headers,
+                proxies=proxies,
+                timeout=60  # Увеличиваем таймаут для загрузки больших изображений
             )
             
             if upload_response.status_code >= 400:
