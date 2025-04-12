@@ -45,8 +45,11 @@ class ProxyHandler:
         username = self.proxy_settings.get("username")
         password = self.proxy_settings.get("password")
         
-        # Формируем URL прокси
-        proxy_url = f"http://"
+        # Получаем протокол прокси (по умолчанию http)
+        protocol = self.proxy_settings.get("protocol", "http")
+        
+        # Формируем URL прокси с учетом протокола
+        proxy_url = f"{protocol}://"
         
         # Добавляем учетные данные, если они предоставлены
         if username and password:
@@ -57,13 +60,14 @@ class ProxyHandler:
         # Если прокси уже проверен и не работает, всегда выбрасываем исключение
         # так как если прокси указаны, они должны работать
         if self.is_proxy_working is False:
-            raise ValueError(f"Прокси {host}:{port} не работает, но является обязательным для запросов")
+            raise ValueError(f"Прокси {protocol}://{host}:{port} не работает, но является обязательным для запросов")
             
         # Этот код никогда не выполнится, но оставлен для совместимости
         if self.is_proxy_working is False and not self.proxy_required:
-            logger.warning(f"Прокси {host}:{port} не работает, запросы будут выполняться без прокси")
+            logger.warning(f"Прокси {protocol}://{host}:{port} не работает, запросы будут выполняться без прокси")
             return {}
         
+        # Для SOCKS прокси нужно указать их для обоих протоколов
         return {
             "http": proxy_url,
             "https": proxy_url
@@ -94,9 +98,10 @@ class ProxyHandler:
         
         username = self.proxy_settings.get("username")
         password = self.proxy_settings.get("password")
+        protocol = self.proxy_settings.get("protocol", "http")
         
-        # Формируем URL прокси
-        proxy_url = f"http://"
+        # Формируем URL прокси с учетом протокола
+        proxy_url = f"{protocol}://"
         
         # Добавляем учетные данные, если они предоставлены
         if username and password:
@@ -133,7 +138,8 @@ class ProxyHandler:
             self.is_proxy_working = False
             
             # Если прокси указаны, всегда выбрасываем исключение
-            raise ValueError(f"Прокси {host}:{port} не работает, но является обязательным для запросов: {str(e)}")
+            protocol = self.proxy_settings.get("protocol", "http")
+            raise ValueError(f"Прокси {protocol}://{host}:{port} не работает, но является обязательным для запросов: {str(e)}")
             
             # Этот код никогда не выполнится, но оставлен для совместимости
             return False

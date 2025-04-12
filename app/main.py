@@ -73,16 +73,37 @@ async def create_post_json(request_data: LinkedInPostRequest = Body(...)):
         # Настройка прокси (опционально)
         proxy_settings = None
         if request_data.proxy:
-            # Извлекаем информацию о прокси из формата http://user:pass@host:port
-            http_proxy = request_data.proxy.get("http", "")
-            https_proxy = request_data.proxy.get("https", http_proxy)
-            
-            # Используем https_proxy для настройки (или http_proxy, если https не указан)
-            proxy_url = https_proxy or http_proxy
+            # Извлекаем информацию о прокси из различных форматов (http://, https://, socks5://, etc.)
+            # Поддержка как словаря с протоколами, так и прямой строки с URL
+            if isinstance(request_data.proxy, dict):
+                http_proxy = request_data.proxy.get("http", "")
+                https_proxy = request_data.proxy.get("https", http_proxy)
+                socks_proxy = request_data.proxy.get("socks5", "")
+                
+                # Используем прокси в порядке приоритета: socks5 > https > http
+                proxy_url = socks_proxy or https_proxy or http_proxy
+            else:
+                # Если прокси передан как строка, используем его напрямую
+                proxy_url = request_data.proxy
             
             if proxy_url:
+                # Определяем протокол прокси
+                protocol = "http"
+                if isinstance(proxy_url, str):
+                    if proxy_url.startswith("socks5://"):
+                        protocol = "socks5"
+                        proxy_url = proxy_url.replace("socks5://", "")
+                    elif proxy_url.startswith("socks4://"):
+                        protocol = "socks4"
+                        proxy_url = proxy_url.replace("socks4://", "")
+                    elif proxy_url.startswith("https://"):
+                        protocol = "https"
+                        proxy_url = proxy_url.replace("https://", "")
+                    elif proxy_url.startswith("http://"):
+                        proxy_url = proxy_url.replace("http://", "")
+                
                 # Парсим URL прокси
-                proxy_parts = proxy_url.replace("http://", "").replace("https://", "").split("@")
+                proxy_parts = proxy_url.split("@")
                 
                 if len(proxy_parts) > 1:
                     # Есть аутентификация
@@ -94,7 +115,8 @@ async def create_post_json(request_data: LinkedInPostRequest = Body(...)):
                         "host": host,
                         "port": int(port),
                         "username": username,
-                        "password": password
+                        "password": password,
+                        "protocol": protocol
                     }
                 else:
                     # Нет аутентификации
@@ -103,7 +125,8 @@ async def create_post_json(request_data: LinkedInPostRequest = Body(...)):
                     
                     proxy_settings = {
                         "host": host,
-                        "port": int(port)
+                        "port": int(port),
+                        "protocol": protocol
                     }
                 
                 logger.info(f"Используются настройки прокси: {proxy_settings['host']}:{proxy_settings['port']}")
