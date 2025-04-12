@@ -21,7 +21,8 @@ class ProxyHandler:
         """
         self.proxy_settings = proxy_settings
         self.is_proxy_working = None  # None означает, что прокси еще не проверялся
-        self.proxy_required = proxy_settings is not None  # Если прокси указаны, они обязательны
+        # Если прокси указаны, они всегда обязательны
+        self.proxy_required = proxy_settings is not None
     
     def get_proxies(self) -> Dict:
         """
@@ -53,10 +54,13 @@ class ProxyHandler:
         
         proxy_url += f"{host}:{port}"
         
-        # Если прокси уже проверен и не работает, выбрасываем исключение если они обязательны
+        # Если прокси уже проверен и не работает, всегда выбрасываем исключение
+        # так как если прокси указаны, они должны работать
         if self.is_proxy_working is False:
-            if self.proxy_required:
-                raise ValueError(f"Прокси {host}:{port} не работает, но является обязательным для запросов")
+            raise ValueError(f"Прокси {host}:{port} не работает, но является обязательным для запросов")
+            
+        # Этот код никогда не выполнится, но оставлен для совместимости
+        if self.is_proxy_working is False and not self.proxy_required:
             logger.warning(f"Прокси {host}:{port} не работает, запросы будут выполняться без прокси")
             return {}
         
@@ -74,7 +78,6 @@ class ProxyHandler:
         :raises: ValueError если прокси обязательны, но не работают
         """
         if not self.proxy_settings:
-            # Если прокси не настроен, считаем что "работает" (т.е. не используется)
             self.is_proxy_working = True
             return True
         
@@ -83,8 +86,9 @@ class ProxyHandler:
         port = self.proxy_settings.get("port")
         
         if not host or not port:
-            if self.proxy_required:
-                raise ValueError("Прокси указаны некорректно, но являются обязательными для запросов")
+            # Если прокси указаны, но некорректно, всегда выбрасываем исключение
+            raise ValueError("Прокси указаны некорректно, но являются обязательными для запросов")
+            # Этот код никогда не выполнится, но оставлен для совместимости
             self.is_proxy_working = False
             return False
         
@@ -128,10 +132,10 @@ class ProxyHandler:
             logger.error(f"Прокси не работает: {str(e)}")
             self.is_proxy_working = False
             
-            # Если прокси обязательны, выбрасываем исключение
-            if self.proxy_required:
-                raise ValueError(f"Прокси {host}:{port} не работает, но является обязательным для запросов: {str(e)}")
+            # Если прокси указаны, всегда выбрасываем исключение
+            raise ValueError(f"Прокси {host}:{port} не работает, но является обязательным для запросов: {str(e)}")
             
+            # Этот код никогда не выполнится, но оставлен для совместимости
             return False
     
     def apply_to_session(self, session):
@@ -149,8 +153,8 @@ class ProxyHandler:
         proxies = self.get_proxies()
         if proxies:
             session.proxies.update(proxies)
-        elif self.proxy_required:
-            # Если прокси обязательны, но не работают или не указаны корректно
-            raise ValueError("Прокси обязательны для запросов, но не работают или указаны некорректно")
+        elif self.proxy_settings is not None:
+            # Если прокси указаны, но не работают или указаны некорректно
+            raise ValueError("Прокси указаны, но не работают или указаны некорректно")
             
         return session
