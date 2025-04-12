@@ -140,8 +140,22 @@ async def create_post_json(request_data: LinkedInPostRequest = Body(...)):
         
         # Проверка работоспособности прокси, если они указаны
         if proxy_settings:
-            if not proxy_handler.check_proxy():
-                logger.warning("Указанные прокси не работают. Запросы будут выполняться напрямую.")
+            try:
+                if not proxy_handler.check_proxy():
+                    error_msg = "Указанные прокси не работают"
+                    logger.error(error_msg)
+                    error_response = {
+                        "error": f"Proxy connection test failed: {error_msg}",
+                        "status": "error"
+                    }
+                    return JSONResponse(status_code=500, content=error_response)
+            except ValueError as e:
+                logger.error(f"Ошибка прокси: {str(e)}")
+                error_response = {
+                    "error": f"Proxy connection test failed: {str(e)}",
+                    "status": "error"
+                }
+                return JSONResponse(status_code=500, content=error_response)
         
         # Инициализация клиента LinkedIn с прокси и опциональным user_id
         linkedin_client = LinkedInClient(
@@ -158,7 +172,22 @@ async def create_post_json(request_data: LinkedInPostRequest = Body(...)):
             logger.info(f"Успешное подключение к LinkedIn. Пользователь: {user_profile.get('id', 'Unknown')}")
         except Exception as e:
             logger.error(f"Ошибка при подключении к LinkedIn: {str(e)}")
-            # Не выбрасываем исключение здесь, так как get_user_profile теперь имеет механизмы обхода
+            # Возвращаем ошибку, так как если не удалось подключиться, то и пост создать не получится
+            error_response = {
+                "status": "error",
+                "error": f"LinkedIn connection failed: {str(e)}",
+                "request": {
+                    "credentials": {
+                        "client_id": request_data.client_id,
+                        "client_secret": "***" + request_data.client_secret[-4:],
+                        "access_token": request_data.access_token[:10] + "***"
+                    },
+                    "text": request_data.text,
+                    "has_image": request_data.image is not None,
+                    "proxy_settings": request_data.proxy
+                }
+            }
+            return JSONResponse(status_code=500, content=error_response)
         
         # Загрузка изображения, если оно есть в base64
         image_urls = []
@@ -175,44 +204,76 @@ async def create_post_json(request_data: LinkedInPostRequest = Body(...)):
                 logger.info(f"Изображение успешно загружено: {image_url}")
             except Exception as e:
                 logger.error(f"Ошибка при декодировании или загрузке изображения: {str(e)}")
-                raise HTTPException(status_code=400, detail=f"Ошибка при обработке изображения: {str(e)}")
+                error_response = {
+                    "status": "error",
+                    "error": f"Image upload failed: {str(e)}",
+                    "request": {
+                        "credentials": {
+                            "client_id": request_data.client_id,
+                            "client_secret": "***" + request_data.client_secret[-4:],
+                            "access_token": request_data.access_token[:10] + "***"
+                        },
+                        "text": request_data.text,
+                        "has_image": request_data.image is not None,
+                        "proxy_settings": request_data.proxy
+                    }
+                }
+                return JSONResponse(status_code=400, content=error_response)
         
         # Публикация поста
         logger.info("Публикация поста в LinkedIn")
-        post_url = linkedin_client.create_post(request_data.text, image_urls)
-        logger.info(f"Пост успешно опубликован: {post_url}")
-        
-        # Извлекаем ID поста из URL
-        post_id = post_url.split("/")[-1] if "/" in post_url else post_url
-        
-        # Формируем ответ в новом формате
-        response_data = {
-            "status": "success",
-            "post_url": post_url,
-            "post_id": post_id,
-            "request": {
-                "credentials": {
-                    "client_id": request_data.client_id,
-                    "client_secret": "***" + request_data.client_secret[-4:],
-                    "access_token": request_data.access_token[:10] + "***"
-                },
-                "text": request_data.text,
-                "has_image": request_data.image is not None,
-                "proxy_settings": request_data.proxy
-            },
-            "response": {
+        try:
+            post_url = linkedin_client.create_post(request_data.text, image_urls)
+            logger.info(f"Пост успешно опубликован: {post_url}")
+            
+            # Извлекаем ID поста из URL
+            post_id = post_url.split("/")[-1] if "/" in post_url else post_url
+            
+            # Формируем ответ в новом формате
+            response_data = {
+                "status": "success",
+                "post_url": post_url,
                 "post_id": post_id,
-                "post_url": post_url
+                "request": {
+                    "credentials": {
+                        "client_id": request_data.client_id,
+                        "client_secret": "***" + request_data.client_secret[-4:],
+                        "access_token": request_data.access_token[:10] + "***"
+                    },
+                    "text": request_data.text,
+                    "has_image": request_data.image is not None,
+                    "proxy_settings": request_data.proxy
+                },
+                "response": {
+                    "post_id": post_id,
+                    "post_url": post_url
+                }
             }
-        }
-        
-        return JSONResponse(content=response_data)
+            
+            return JSONResponse(content=response_data)
+        except Exception as e:
+            logger.error(f"Ошибка при публикации поста: {str(e)}")
+            error_response = {
+                "status": "error",
+                "error": f"Post creation failed: {str(e)}",
+                "request": {
+                    "credentials": {
+                        "client_id": request_data.client_id,
+                        "client_secret": "***" + request_data.client_secret[-4:],
+                        "access_token": request_data.access_token[:10] + "***"
+                    },
+                    "text": request_data.text,
+                    "has_image": request_data.image is not None,
+                    "proxy_settings": request_data.proxy
+                }
+            }
+            return JSONResponse(status_code=500, content=error_response)
     
     except Exception as e:
         logger.error(f"Ошибка при публикации поста: {str(e)}")
         error_response = {
             "status": "error",
-            "message": str(e),
+            "error": str(e),
             "request": {
                 "credentials": {
                     "client_id": request_data.client_id,
@@ -250,7 +311,8 @@ async def create_post(
                 "host": proxy_host,
                 "port": proxy_port,
                 "username": proxy_username,
-                "password": proxy_password
+                "password": proxy_password,
+                "protocol": "http"  # По умолчанию используем HTTP протокол
             }
             logger.info(f"Используются настройки прокси: {proxy_host}:{proxy_port}")
         else:
@@ -261,8 +323,22 @@ async def create_post(
         
         # Проверка работоспособности прокси, если они указаны
         if proxy_settings:
-            if not proxy_handler.check_proxy():
-                logger.warning("Указанные прокси не работают. Запросы будут выполняться напрямую.")
+            try:
+                if not proxy_handler.check_proxy():
+                    error_msg = "Указанные прокси не работают"
+                    logger.error(error_msg)
+                    error_response = {
+                        "status": "error",
+                        "error": f"Proxy connection test failed: {error_msg}"
+                    }
+                    return JSONResponse(status_code=500, content=error_response)
+            except ValueError as e:
+                logger.error(f"Ошибка прокси: {str(e)}")
+                error_response = {
+                    "status": "error",
+                    "error": f"Proxy connection test failed: {str(e)}"
+                }
+                return JSONResponse(status_code=500, content=error_response)
         
         # Инициализация клиента LinkedIn с прокси и опциональным user_id
         linkedin_client = LinkedInClient(
@@ -279,7 +355,11 @@ async def create_post(
             logger.info(f"Успешное подключение к LinkedIn. Пользователь: {user_profile.get('id', 'Unknown')}")
         except Exception as e:
             logger.error(f"Ошибка при подключении к LinkedIn: {str(e)}")
-            # Не выбрасываем исключение здесь, так как get_user_profile теперь имеет механизмы обхода
+            error_response = {
+                "status": "error",
+                "error": f"LinkedIn connection failed: {str(e)}"
+            }
+            return JSONResponse(status_code=500, content=error_response)
         
         # Загрузка изображений, если они есть
         image_urls = []
@@ -288,31 +368,51 @@ async def create_post(
             for i, image in enumerate(images):
                 if image.filename:  # Проверяем, что файл действительно был загружен
                     logger.info(f"Загрузка изображения {i+1}: {image.filename}")
-                    image_data = await image.read()
-                    image_url = linkedin_client.upload_image(image_data, image.filename)
-                    image_urls.append(image_url)
-                    logger.info(f"Изображение {i+1} успешно загружено: {image_url}")
+                    try:
+                        image_data = await image.read()
+                        image_url = linkedin_client.upload_image(image_data, image.filename)
+                        image_urls.append(image_url)
+                        logger.info(f"Изображение {i+1} успешно загружено: {image_url}")
+                    except Exception as e:
+                        logger.error(f"Ошибка при загрузке изображения {i+1}: {str(e)}")
+                        error_response = {
+                            "status": "error",
+                            "error": f"Image upload failed: {str(e)}"
+                        }
+                        return JSONResponse(status_code=400, content=error_response)
         
         # Публикация поста
         logger.info("Публикация поста в LinkedIn")
-        post_url = linkedin_client.create_post(text, image_urls)
-        logger.info(f"Пост успешно опубликован: {post_url}")
-        
-        # Извлекаем ID поста из URL для совместимости с новым форматом
-        post_id = post_url.split("/")[-1] if "/" in post_url else post_url
-        
-        response_data = {
-            "status": "success",
-            "message": "Пост успешно опубликован",
-            "post_url": post_url,
-            "post_id": post_id
-        }
-        
-        return JSONResponse(content=response_data)
+        try:
+            post_url = linkedin_client.create_post(text, image_urls)
+            logger.info(f"Пост успешно опубликован: {post_url}")
+            
+            # Извлекаем ID поста из URL для совместимости с новым форматом
+            post_id = post_url.split("/")[-1] if "/" in post_url else post_url
+            
+            response_data = {
+                "status": "success",
+                "message": "Пост успешно опубликован",
+                "post_url": post_url,
+                "post_id": post_id
+            }
+            
+            return JSONResponse(content=response_data)
+        except Exception as e:
+            logger.error(f"Ошибка при публикации поста: {str(e)}")
+            error_response = {
+                "status": "error",
+                "error": f"Post creation failed: {str(e)}"
+            }
+            return JSONResponse(status_code=500, content=error_response)
     
     except Exception as e:
         logger.error(f"Ошибка при публикации поста: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Ошибка при публикации: {str(e)}")
+        error_response = {
+            "status": "error",
+            "error": str(e)
+        }
+        return JSONResponse(status_code=500, content=error_response)
 
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host=Config.HOST, port=Config.PORT, reload=True)
