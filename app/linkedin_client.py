@@ -2,6 +2,9 @@ import requests
 from typing import List, Optional, Dict
 from app.proxy_handler import ProxyHandler
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 class LinkedInClient:
     """
@@ -26,119 +29,184 @@ class LinkedInClient:
         url = f"{self.base_url}{endpoint}"
         proxies = self.proxy_handler.get_proxies()
         
-        response = requests.request(
-            method=method,
-            url=url,
-            headers=self.headers,
-            data=data,
-            files=files,
-            json=json,
-            proxies=proxies
-        )
+        logger.info(f"Отправка {method} запроса к {url}")
+        if proxies:
+            logger.info(f"Используются прокси: {proxies}")
         
-        if response.status_code >= 400:
-            error_message = f"LinkedIn API error: {response.status_code} - {response.text}"
-            raise Exception(error_message)
-        
-        return response.json() if response.text else {}
+        try:
+            response = requests.request(
+                method=method,
+                url=url,
+                headers=self.headers,
+                data=data,
+                files=files,
+                json=json,
+                proxies=proxies
+            )
+            
+            logger.info(f"Получен ответ от API LinkedIn: {response.status_code}")
+            
+            if response.status_code >= 400:
+                error_message = f"LinkedIn API error: {response.status_code} - {response.text}"
+                logger.error(f"Ошибка API LinkedIn: {error_message}")
+                
+                if response.status_code == 401:
+                    raise Exception(f"Ошибка аутентификации: токен доступа недействителен или истек срок его действия. {response.text}")
+                elif response.status_code == 403:
+                    raise Exception(f"Ошибка авторизации: недостаточно прав для выполнения операции. Токен должен иметь разрешения: r_liteprofile, w_member_social. {response.text}")
+                else:
+                    raise Exception(error_message)
+            
+            return response.json() if response.text else {}
+            
+        except requests.RequestException as e:
+            logger.error(f"Ошибка сетевого запроса: {str(e)}")
+            raise Exception(f"Ошибка сетевого запроса: {str(e)}")
     
     def get_user_profile(self):
         """
         Получает информацию о профиле пользователя
         """
-        endpoint = "/me"
-        return self._make_request("GET", endpoint)
+        try:
+            logger.info("Получение информации о профиле пользователя")
+            endpoint = "/me"
+            return self._make_request("GET", endpoint)
+        except Exception as e:
+            logger.error(f"Ошибка при получении профиля пользователя: {str(e)}")
+            raise Exception(f"Не удалось получить профиль пользователя LinkedIn. Убедитесь, что токен доступа действителен и имеет разрешение r_liteprofile. Ошибка: {str(e)}")
     
     def upload_image(self, image_data: bytes, filename: str) -> str:
         """
         Загружает изображение в LinkedIn и возвращает URL для использования в посте
         """
-        # Шаг 1: Инициализация загрузки изображения
-        register_endpoint = "/assets?action=registerUpload"
-        register_data = {
-            "registerUploadRequest": {
-                "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
-                "owner": "urn:li:person:" + self.get_user_profile()["id"],
-                "serviceRelationships": [
-                    {
-                        "relationshipType": "OWNER",
-                        "identifier": "urn:li:userGeneratedContent"
-                    }
-                ]
+        try:
+            logger.info(f"Загрузка изображения: {filename}")
+            
+            # Шаг 1: Инициализация загрузки изображения
+            register_endpoint = "/assets?action=registerUpload"
+            
+            # Получаем ID пользователя
+            user_profile = self.get_user_profile()
+            if "id" not in user_profile:
+                raise Exception("Не удалось получить ID пользователя из профиля. Проверьте разрешения токена.")
+            
+            user_id = user_profile["id"]
+            logger.info(f"ID пользователя LinkedIn: {user_id}")
+            
+            register_data = {
+                "registerUploadRequest": {
+                    "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
+                    "owner": f"urn:li:person:{user_id}",
+                    "serviceRelationships": [
+                        {
+                            "relationshipType": "OWNER",
+                            "identifier": "urn:li:userGeneratedContent"
+                        }
+                    ]
+                }
             }
-        }
-        
-        upload_info = self._make_request("POST", register_endpoint, json=register_data)
-        
-        # Шаг 2: Загрузка изображения по полученному URL
-        upload_url = upload_info["value"]["uploadMechanism"]["com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"]["uploadUrl"]
-        asset_id = upload_info["value"]["asset"]
-        
-        # Загрузка изображения на полученный URL
-        proxies = self.proxy_handler.get_proxies()
-        upload_response = requests.put(
-            url=upload_url,
-            data=image_data,
-            headers={"Content-Type": "application/octet-stream"},
-            proxies=proxies
-        )
-        
-        if upload_response.status_code >= 400:
-            raise Exception(f"Ошибка при загрузке изображения: {upload_response.status_code} - {upload_response.text}")
-        
-        return asset_id
+            
+            upload_info = self._make_request("POST", register_endpoint, json=register_data)
+            logger.info("Получена информация для загрузки изображения")
+            
+            # Шаг 2: Загрузка изображения по полученному URL
+            if "value" not in upload_info or "uploadMechanism" not in upload_info["value"] or "com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest" not in upload_info["value"]["uploadMechanism"]:
+                raise Exception(f"Неверный формат ответа при регистрации загрузки: {json.dumps(upload_info)}")
+            
+            upload_url = upload_info["value"]["uploadMechanism"]["com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"]["uploadUrl"]
+            asset_id = upload_info["value"]["asset"]
+            
+            logger.info(f"URL для загрузки изображения: {upload_url}")
+            logger.info(f"ID ресурса: {asset_id}")
+            
+            # Загрузка изображения на полученный URL
+            proxies = self.proxy_handler.get_proxies()
+            upload_response = requests.put(
+                url=upload_url,
+                data=image_data,
+                headers={"Content-Type": "application/octet-stream"},
+                proxies=proxies
+            )
+            
+            if upload_response.status_code >= 400:
+                raise Exception(f"Ошибка при загрузке изображения: {upload_response.status_code} - {upload_response.text}")
+            
+            logger.info(f"Изображение успешно загружено: {asset_id}")
+            return asset_id
+            
+        except Exception as e:
+            logger.error(f"Ошибка при загрузке изображения: {str(e)}")
+            raise Exception(f"Не удалось загрузить изображение в LinkedIn. Ошибка: {str(e)}")
     
     def create_post(self, text: str, image_urls: List[str] = None) -> str:
         """
         Создает пост в LinkedIn с текстом и опционально с изображениями
         Возвращает URL созданного поста
         """
-        # Получаем ID пользователя
-        user_id = self.get_user_profile()["id"]
-        
-        # Формируем данные для поста
-        post_data = {
-            "author": f"urn:li:person:{user_id}",
-            "lifecycleState": "PUBLISHED",
-            "specificContent": {
-                "com.linkedin.ugc.ShareContent": {
-                    "shareCommentary": {
-                        "text": text
-                    },
-                    "shareMediaCategory": "NONE"
-                }
-            },
-            "visibility": {
-                "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
-            }
-        }
-        
-        # Если есть изображения, добавляем их в пост
-        if image_urls and len(image_urls) > 0:
-            media_list = []
-            for i, image_url in enumerate(image_urls):
-                media_list.append({
-                    "status": "READY",
-                    "description": {
-                        "text": f"Image {i+1}"
-                    },
-                    "media": image_url,
-                    "title": {
-                        "text": f"Image {i+1}"
-                    }
-                })
+        try:
+            logger.info(f"Создание поста в LinkedIn. Текст: {text[:50]}...")
             
-            post_data["specificContent"]["com.linkedin.ugc.ShareContent"]["shareMediaCategory"] = "IMAGE"
-            post_data["specificContent"]["com.linkedin.ugc.ShareContent"]["media"] = media_list
-        
-        # Отправляем запрос на создание поста
-        endpoint = "/ugcPosts"
-        response = self._make_request("POST", endpoint, json=post_data)
-        
-        # Получаем ID созданного поста
-        post_id = response["id"]
-        
-        # Формируем URL поста
-        post_url = f"https://www.linkedin.com/feed/update/{post_id}"
-        
-        return post_url
+            # Получаем ID пользователя
+            user_profile = self.get_user_profile()
+            if "id" not in user_profile:
+                raise Exception("Не удалось получить ID пользователя из профиля. Проверьте разрешения токена.")
+            
+            user_id = user_profile["id"]
+            logger.info(f"ID пользователя LinkedIn: {user_id}")
+            
+            # Формируем данные для поста
+            post_data = {
+                "author": f"urn:li:person:{user_id}",
+                "lifecycleState": "PUBLISHED",
+                "specificContent": {
+                    "com.linkedin.ugc.ShareContent": {
+                        "shareCommentary": {
+                            "text": text
+                        },
+                        "shareMediaCategory": "NONE"
+                    }
+                },
+                "visibility": {
+                    "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
+                }
+            }
+            
+            # Если есть изображения, добавляем их в пост
+            if image_urls and len(image_urls) > 0:
+                logger.info(f"Добавление {len(image_urls)} изображений к посту")
+                media_list = []
+                for i, image_url in enumerate(image_urls):
+                    media_list.append({
+                        "status": "READY",
+                        "description": {
+                            "text": f"Image {i+1}"
+                        },
+                        "media": image_url,
+                        "title": {
+                            "text": f"Image {i+1}"
+                        }
+                    })
+                
+                post_data["specificContent"]["com.linkedin.ugc.ShareContent"]["shareMediaCategory"] = "IMAGE"
+                post_data["specificContent"]["com.linkedin.ugc.ShareContent"]["media"] = media_list
+            
+            # Отправляем запрос на создание поста
+            endpoint = "/ugcPosts"
+            response = self._make_request("POST", endpoint, json=post_data)
+            
+            # Получаем ID созданного поста
+            if "id" not in response:
+                raise Exception(f"Неверный формат ответа при создании поста: {json.dumps(response)}")
+            
+            post_id = response["id"]
+            logger.info(f"Пост успешно создан. ID: {post_id}")
+            
+            # Формируем URL поста
+            post_url = f"https://www.linkedin.com/feed/update/{post_id}"
+            logger.info(f"URL поста: {post_url}")
+            
+            return post_url
+            
+        except Exception as e:
+            logger.error(f"Ошибка при создании поста: {str(e)}")
+            raise Exception(f"Не удалось создать пост в LinkedIn. Убедитесь, что токен доступа действителен и имеет разрешение w_member_social. Ошибка: {str(e)}")
