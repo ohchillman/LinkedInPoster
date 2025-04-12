@@ -31,11 +31,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Настраиваем статические файлы
-app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")
+# Определяем абсолютный путь к директории static
+static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+logger.info(f"Static files directory: {static_dir}")
+
+# Настраиваем статические файлы с явным указанием абсолютного пути
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # Настраиваем шаблоны
-templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
+templates_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
+logger.info(f"Templates directory: {templates_dir}")
+templates = Jinja2Templates(directory=templates_dir)
 
 # Регистрируем API роутер
 app.include_router(api_router, prefix="/api")
