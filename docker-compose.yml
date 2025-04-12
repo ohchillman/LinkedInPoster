@@ -1,0 +1,21 @@
+version: '3'
+
+services:
+  linkedin-poster:
+    build: .
+    ports:
+      - "5001:5001"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=5001
+      # Можно указать значения по умолчанию для LinkedIn и прокси
+      # - LINKEDIN_CLIENT_ID=
+      # - LINKEDIN_CLIENT_SECRET=
+      # - LINKEDIN_ACCESS_TOKEN=
+      # - PROXY_HOST=
+      # - PROXY_PORT=
+      # - PROXY_USERNAME=
+      # - PROXY_PASSWORD=
+    volumes:
+      - ./app:/app/app
+    restart: unless-stopped

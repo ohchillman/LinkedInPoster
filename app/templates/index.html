@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LinkedIn Poster API</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #0077b5;
+            margin-bottom: 20px;
+        }
+        .container {
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"],
+        input[type="number"],
+        textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        textarea {
+            height: 100px;
+            resize: vertical;
+        }
+        button {
+            background-color: #0077b5;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #005582;
+        }
+        .section {
+            margin-bottom: 30px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 20px;
+        }
+        .section:last-child {
+            border-bottom: none;
+        }
+        .response {
+            background-color: #f0f0f0;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 20px;
+            white-space: pre-wrap;
+            display: none;
+        }
+        .toggle-section {
+            background-color: #f0f0f0;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .toggle-section:hover {
+            background-color: #e0e0e0;
+        }
+        .hidden {
+            display: none;
+        }
+        .example {
+            background-color: #e8f4f8;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>LinkedIn Poster API</h1>
+    
+    <div class="container">
+        <div class="toggle-section" onclick="toggleSection('apiInfo')">
+            <h2>Информация об API</h2>
+        </div>
+        <div id="apiInfo" class="section hidden">
+            <p>Этот сервис позволяет публиковать контент в LinkedIn через API. Вы можете отправлять запросы на <code>/post</code> с необходимыми параметрами.</p>
+            
+            <h3>Пример запроса:</h3>
+            <div class="example">
+<pre>
+POST /post
+Content-Type: multipart/form-data
+
+linkedin_client_id: YOUR_CLIENT_ID
+linkedin_client_secret: YOUR_CLIENT_SECRET
+linkedin_access_token: YOUR_ACCESS_TOKEN
+text: Текст вашего поста
+images: [файлы изображений]
+proxy_host: (опционально) хост прокси
+proxy_port: (опционально) порт прокси
+proxy_username: (опционально) имя пользователя прокси
+proxy_password: (опционально) пароль прокси
+</pre>
+            </div>
+            
+            <h3>Пример ответа:</h3>
+            <div class="example">
+<pre>
+{
+    "status": "success",
+    "message": "Пост успешно опубликован",
+    "post_url": "https://www.linkedin.com/feed/update/urn:li:share:1234567890"
+}
+</pre>
+            </div>
+        </div>
+        
+        <div class="toggle-section" onclick="toggleSection('testForm')">
+            <h2>Тестовая форма</h2>
+        </div>
+        <div id="testForm" class="section">
+            <form id="linkedinForm" enctype="multipart/form-data">
+                <div class="section">
+                    <h3>Данные LinkedIn</h3>
+                    <div class="form-group">
+                        <label for="linkedin_client_id">Client ID:</label>
+                        <input type="text" id="linkedin_client_id" name="linkedin_client_id" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="linkedin_client_secret">Client Secret:</label>
+                        <input type="text" id="linkedin_client_secret" name="linkedin_client_secret" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="linkedin_access_token">Access Token:</label>
+                        <input type="text" id="linkedin_access_token" name="linkedin_access_token" required>
+                    </div>
+                </div>
+                
+                <div class="section">
+                    <h3>Содержимое поста</h3>
+                    <div class="form-group">
+                        <label for="text">Текст поста:</label>
+                        <textarea id="text" name="text" required></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="images">Изображения (опционально):</label>
+                        <input type="file" id="images" name="images" multiple>
+                    </div>
+                </div>
+                
+                <div class="section">
+                    <h3>Настройки прокси (опционально)</h3>
+                    <div class="form-group">
+                        <label for="proxy_host">Хост прокси:</label>
+                        <input type="text" id="proxy_host" name="proxy_host">
+                    </div>
+                    <div class="form-group">
+                        <label for="proxy_port">Порт прокси:</label>
+                        <input type="number" id="proxy_port" name="proxy_port">
+                    </div>
+                    <div class="form-group">
+                        <label for="proxy_username">Имя пользователя прокси:</label>
+                        <input type="text" id="proxy_username" name="proxy_username">
+                    </div>
+                    <div class="form-group">
+                        <label for="proxy_password">Пароль прокси:</label>
+                        <input type="text" id="proxy_password" name="proxy_password">
+                    </div>
+                </div>
+                
+                <button type="submit">Отправить пост</button>
+            </form>
+            
+            <div id="response" class="response"></div>
+        </div>
+    </div>
+    
+    <script>
+        function toggleSection(sectionId) {
+            const section = document.getElementById(sectionId);
+            section.classList.toggle('hidden');
+        }
+        
+        document.getElementById('linkedinForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const responseDiv = document.getElementById('response');
+            responseDiv.style.display = 'block';
+            responseDiv.textContent = 'Отправка запроса...';
+            
+            try {
+                const response = await fetch('/post', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                responseDiv.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                responseDiv.textContent = 'Ошибка: ' + error.message;
+            }
+        });
+        
+        // Автозаполнение тестовыми данными
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('linkedin_client_id').value = '860om6jxi80yk7';
+            document.getElementById('linkedin_client_secret').value = 'WPL_AP1.ARovOXo3zn47GqXx.vOc/fQ==';
+            document.getElementById('linkedin_access_token').value = 'AQXvrVELQD9ejVhtt87cHjBrzGHNuhBmdmE8KcFM5aChxhnPxgHY2fpZrdO7n8T61ReFl8x0ncZ7fPYfhyVcL1FmMfleq-oHOZ5hxhYFyP9Q9Qbj5L5_ld-oBCPjmx5FNopFMQIn5H073ZPnw2pziv6ejMch0NmsB3Uhiy-1RF9tgz_vBNBm7pMR5h389zP2e6wrPcOG3johfmtdQH064-NYuwVWHpOWKcMqpdM_rcOyaql5UUNGlynwBKhrgQF3d0zHYrz6P8GO1TrbOIQNgFx0sbvs7fwJLDfY2aR7B1EI3gQvu3g3_8-L1Usx7d_LgqWxV11GqHawS6SLqgMl-PK4JHVl9g';
+            document.getElementById('text').value = 'Тестовый пост из LinkedIn Poster API';
+        });
+    </script>
+</body>
+</html>
