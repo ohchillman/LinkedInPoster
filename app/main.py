@@ -1,6 +1,7 @@
 from app.config import Config
 from app.proxy_handler import ProxyHandler
 from app.linkedin_client import LinkedInClient
+from app.api import api_router
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, Request, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -30,8 +31,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Настраиваем статические файлы
+app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")
+
 # Настраиваем шаблоны
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
+
+# Регистрируем API роутер
+app.include_router(api_router, prefix="/api")
 
 # Модель для JSON запроса
 class LinkedInPostRequest(BaseModel):
@@ -46,6 +53,10 @@ class LinkedInPostRequest(BaseModel):
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
 
 # Новый эндпоинт для JSON API
 @app.post("/api/post", response_model=Dict[str, Any])
@@ -149,14 +160,42 @@ async def create_post_json(request_data: LinkedInPostRequest = Body(...)):
         response_data = {
             "status": "success",
             "post_url": post_url,
-            "post_id": post_id
+            "post_id": post_id,
+            "request": {
+                "credentials": {
+                    "client_id": request_data.client_id,
+                    "client_secret": "***" + request_data.client_secret[-4:],
+                    "access_token": request_data.access_token[:10] + "***"
+                },
+                "text": request_data.text,
+                "has_image": request_data.image is not None,
+                "proxy_settings": request_data.proxy
+            },
+            "response": {
+                "post_id": post_id,
+                "post_url": post_url
+            }
         }
         
         return JSONResponse(content=response_data)
     
     except Exception as e:
         logger.error(f"Ошибка при публикации поста: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Ошибка при публикации: {str(e)}")
+        error_response = {
+            "status": "error",
+            "message": str(e),
+            "request": {
+                "credentials": {
+                    "client_id": request_data.client_id,
+                    "client_secret": "***" + request_data.client_secret[-4:],
+                    "access_token": request_data.access_token[:10] + "***"
+                },
+                "text": request_data.text,
+                "has_image": request_data.image is not None,
+                "proxy_settings": request_data.proxy
+            }
+        }
+        return JSONResponse(status_code=500, content=error_response)
 
 # Сохраняем старый эндпоинт для обратной совместимости
 @app.post("/post")
@@ -245,10 +284,6 @@ async def create_post(
     except Exception as e:
         logger.error(f"Ошибка при публикации поста: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Ошибка при публикации: {str(e)}")
-
-@app.get("/health")
-async def health_check():
-    return {"status": "ok", "service": "LinkedIn Poster API", "version": "1.0.0"}
 
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host=Config.HOST, port=Config.PORT, reload=True)

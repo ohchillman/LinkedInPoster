@@ -1,340 +1,102 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LinkedIn Poster API</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            line-height: 1.6;
-            margin: 0;
-            padding: 20px;
-            color: #333;
-            max-width: 1000px;
-            margin: 0 auto;
-        }
-        h1 {
-            color: #0077b5;
-            margin-bottom: 20px;
-        }
-        .container {
-            background-color: #f9f9f9;
-            border-radius: 5px;
-            padding: 20px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        }
-        .form-group {
-            margin-bottom: 15px;
-        }
-        label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: bold;
-        }
-        input[type="text"],
-        input[type="number"],
-        textarea {
-            width: 100%;
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            box-sizing: border-box;
-        }
-        textarea {
-            height: 100px;
-            resize: vertical;
-        }
-        button {
-            background-color: #0077b5;
-            color: white;
-            border: none;
-            padding: 10px 15px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-        }
-        button:hover {
-            background-color: #005582;
-        }
-        .section {
-            margin-bottom: 30px;
-            border-bottom: 1px solid #eee;
-            padding-bottom: 20px;
-        }
-        .section:last-child {
-            border-bottom: none;
-        }
-        .response {
-            background-color: #f0f0f0;
-            padding: 15px;
-            border-radius: 4px;
-            margin-top: 20px;
-            white-space: pre-wrap;
-            display: none;
-        }
-        .toggle-section {
-            background-color: #f0f0f0;
-            padding: 10px;
-            margin-bottom: 10px;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        .toggle-section:hover {
-            background-color: #e0e0e0;
-        }
-        .hidden {
-            display: none;
-        }
-        .example {
-            background-color: #e8f4f8;
-            padding: 15px;
-            border-radius: 4px;
-            margin-top: 10px;
-        }
-        .info-box {
-            background-color: #fff8e1;
-            border-left: 4px solid #ffc107;
-            padding: 15px;
-            margin: 15px 0;
-            border-radius: 0 4px 4px 0;
-        }
-        .error-box {
-            background-color: #ffebee;
-            border-left: 4px solid #f44336;
-            padding: 15px;
-            margin: 15px 0;
-            border-radius: 0 4px 4px 0;
-        }
-        .new-feature {
-            background-color: #e8f5e9;
-            border-left: 4px solid #4caf50;
-            padding: 15px;
-            margin: 15px 0;
-            border-radius: 0 4px 4px 0;
-        }
-        .security-box {
-            background-color: #e3f2fd;
-            border-left: 4px solid #2196f3;
-            padding: 15px;
-            margin: 15px 0;
-            border-radius: 0 4px 4px 0;
-        }
-        .required:after {
-            content: " *";
-            color: #f44336;
-        }
-    </style>
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <h1>LinkedIn Poster API</h1>
-    
     <div class="container">
-        <div class="toggle-section" onclick="toggleSection('apiInfo')">
-            <h2>Информация об API</h2>
-        </div>
-        <div id="apiInfo" class="section hidden">
-            <p>Этот сервис позволяет публиковать контент в LinkedIn через API. Вы можете отправлять запросы на <code>/post</code> с необходимыми параметрами.</p>
-            
-            <div class="info-box">
-                <h3>Требования к токену доступа LinkedIn</h3>
-                <p>Для корректной работы API, ваш токен доступа LinkedIn должен иметь следующие разрешения:</p>
-                <ul>
-                    <li><strong>w_member_social</strong> - для публикации постов</li>
-                </ul>
-                <p>Если вы получаете ошибки авторизации, убедитесь, что ваш токен:</p>
-                <ul>
-                    <li>Не истек (токены LinkedIn обычно действительны 60 дней)</li>
-                    <li>Имеет все необходимые разрешения</li>
-                    <li>Получен для правильного приложения LinkedIn</li>
-                </ul>
-                <p><a href="https://www.linkedin.com/developers/apps" target="_blank">Перейдите в консоль разработчика LinkedIn</a> для управления вашими приложениями и токенами.</p>
+        <h1>LinkedIn Poster API</h1>
+        
+        <form id="linkedinForm">
+            <div class="form-group">
+                <label for="client_id">Client ID:</label>
+                <input type="text" id="client_id" name="client_id" value="860om6jxi80yk7" required>
             </div>
             
-            <div class="security-box">
-                <h3>Требование использования прокси</h3>
-                <p>В целях безопасности, для публикации постов <strong>обязательно</strong> требуется использование прокси.</p>
-                <p>Параметры <code>proxy_host</code> и <code>proxy_port</code> являются обязательными для всех запросов.</p>
-                <p>Параметры <code>proxy_username</code> и <code>proxy_password</code> опциональны и используются для прокси с аутентификацией.</p>
+            <div class="form-group">
+                <label for="client_secret">Client Secret:</label>
+                <input type="password" id="client_secret" name="client_secret" value="WPL_AP1.ARovOXo3zn47GqXx.vOc/fQ==" required>
             </div>
             
-            <div class="new-feature">
-                <h3>Функция: Указание ID пользователя LinkedIn</h3>
-                <p>Если у вас возникают проблемы с доступом к профилю через API LinkedIn, вы можете указать ваш ID пользователя LinkedIn напрямую:</p>
-                <ul>
-                    <li>Параметр <strong>user_id</strong> позволяет обойти необходимость запроса к профилю</li>
-                    <li>Это особенно полезно, если ваш токен не имеет разрешения r_liteprofile</li>
-                </ul>
-                <p>Ваш ID пользователя LinkedIn можно найти в URL вашего профиля или в консоли разработчика.</p>
+            <div class="form-group">
+                <label for="access_token">Access Token:</label>
+                <input type="text" id="access_token" name="access_token" value="AQXvrVELQD9ejVhtt87cHjBrzGHNuhBmdmE8KcFM5aChxhnPxgHY2fpZrdO7n8T61ReFl8x0ncZ7fPYfhyVcL1FmMfleq-oHOZ5hxhYFyP9Q9Qbj5L5_ld-oBCPjmx5FNopFMQIn5H073ZPnw2pziv6ejMch0NmsB3Uhiy-1RF9tgz_vBNBm7pMR5h389zP2e6wrPcOG3johfmtdQH064-NYuwVWHpOWKcMqpdM_rcOyaql5UUNGlynwBKhrgQF3d0zHYrz6P8GO1TrbOIQNgFx0sbvs7fwJLDfY2aR7B1EI3gQvu3g3_8-L1Usx7d_LgqWxV11GqHawS6SLqgMl-PK4JHVl9g" required>
             </div>
             
-            <h3>Пример запроса:</h3>
-            <div class="example">
-<pre>
-POST /post
-Content-Type: multipart/form-data
-
-linkedin_client_id: YOUR_CLIENT_ID
-linkedin_client_secret: YOUR_CLIENT_SECRET
-linkedin_access_token: YOUR_ACCESS_TOKEN
-text: Текст вашего поста
-images: [файлы изображений]
-proxy_host: proxy.example.com (обязательно)
-proxy_port: 8080 (обязательно)
-proxy_username: (опционально) имя пользователя прокси
-proxy_password: (опционально) пароль прокси
-user_id: (опционально) ваш ID пользователя LinkedIn
-</pre>
+            <div class="form-group">
+                <label for="postText">Post Text:</label>
+                <textarea id="postText" name="postText" required>Тестовый пост из LinkedIn Poster API! #test #api</textarea>
             </div>
             
-            <h3>Пример успешного ответа:</h3>
-            <div class="example">
-<pre>
-{
-    "status": "success",
-    "message": "Пост успешно опубликован",
-    "post_url": "https://www.linkedin.com/feed/update/urn:li:share:1234567890"
-}
-</pre>
+            <div class="image-upload">
+                <label for="imageFile">Image (PNG only):</label>
+                <input type="file" id="imageFile" name="imageFile" accept="image/png">
             </div>
             
-            <h3>Пример ответа с ошибкой:</h3>
-            <div class="example">
-<pre>
-{
-    "detail": "Для публикации постов требуется использование прокси. Пожалуйста, укажите proxy_host и proxy_port."
-}
-</pre>
+            <div class="proxy-section">
+                <div class="proxy-toggle">
+                    <input type="checkbox" id="useProxy" name="useProxy">
+                    <label for="useProxy">Use Proxy</label>
+                </div>
+                
+                <div id="proxyFields" style="display: none;">
+                    <div class="proxy-type">
+                        <input type="radio" id="httpProxyType" name="proxyType" value="http" checked>
+                        <label for="httpProxyType">HTTP/HTTPS</label>
+                        
+                        <input type="radio" id="socks5ProxyType" name="proxyType" value="socks5">
+                        <label for="socks5ProxyType">SOCKS5</label>
+                    </div>
+                    
+                    <div id="httpProxyFields">
+                        <div class="form-group">
+                            <label for="httpProxy">HTTP Proxy:</label>
+                            <input type="text" id="httpProxy" name="httpProxy" placeholder="http://user:pass@host:port" value="http://cpvbnd3wfl-corp.mobile-country-MD-state-618069-hold-session-session-67efeca1c7365:FxOQ5x8ym6c1GQfh@109.236.82.42:9999">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="httpsProxy">HTTPS Proxy:</label>
+                            <input type="text" id="httpsProxy" name="httpsProxy" placeholder="https://user:pass@host:port" value="https://cpvbnd3wfl-corp.mobile-country-MD-state-618069-hold-session-session-67efeca1c7365:FxOQ5x8ym6c1GQfh@109.236.82.42:9999">
+                        </div>
+                    </div>
+                    
+                    <div id="socks5ProxyFields" style="display: none;">
+                        <div class="form-group">
+                            <label for="socks5Proxy">SOCKS5 Proxy:</label>
+                            <input type="text" id="socks5Proxy" name="socks5Proxy" placeholder="socks5://user:pass@host:port">
+                        </div>
+                    </div>
+                </div>
             </div>
+            
+            <button type="submit" id="submitBtn">Post to LinkedIn</button>
+        </form>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Posting to LinkedIn...</p>
         </div>
         
-        <div class="toggle-section" onclick="toggleSection('testForm')">
-            <h2>Тестовая форма</h2>
-        </div>
-        <div id="testForm" class="section">
-            <div class="info-box">
-                <h3>Важная информация о токене LinkedIn</h3>
-                <p>Для успешной публикации постов, убедитесь, что ваш токен доступа имеет разрешение <strong>w_member_social</strong>.</p>
-                <p>Если вы получаете ошибки авторизации, вам может потребоваться создать новое приложение в <a href="https://www.linkedin.com/developers/apps" target="_blank">консоли разработчика LinkedIn</a> и получить новый токен с правильными разрешениями.</p>
+        <div class="response" id="response">
+            <h3 id="responseTitle"></h3>
+            <p id="responseMessage"></p>
+            <a href="#" id="postLink" class="post-link" target="_blank" style="display: none;">View Post</a>
+            
+            <div class="request-details">
+                <h4>Request Details:</h4>
+                <pre id="requestDetails"></pre>
             </div>
             
-            <div class="security-box">
-                <h3>Обязательное использование прокси</h3>
-                <p>В целях безопасности, для публикации постов <strong>обязательно</strong> требуется использование прокси.</p>
-                <p>Поля "Хост прокси" и "Порт прокси" должны быть заполнены.</p>
+            <div class="response-details">
+                <h4>Response Details:</h4>
+                <pre id="responseDetails"></pre>
             </div>
-            
-            <div class="new-feature">
-                <h3>Функция: Обход проблем с доступом к профилю</h3>
-                <p>Если у вас возникают ошибки с доступом к профилю, вы можете указать ваш ID пользователя LinkedIn в поле ниже.</p>
-                <p>Это позволит сервису публиковать посты даже если токен не имеет разрешения r_liteprofile.</p>
-            </div>
-            
-            <form id="linkedinForm" enctype="multipart/form-data">
-                <div class="section">
-                    <h3>Данные LinkedIn</h3>
-                    <div class="form-group">
-                        <label for="linkedin_client_id" class="required">Client ID:</label>
-                        <input type="text" id="linkedin_client_id" name="linkedin_client_id" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="linkedin_client_secret" class="required">Client Secret:</label>
-                        <input type="text" id="linkedin_client_secret" name="linkedin_client_secret" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="linkedin_access_token" class="required">Access Token:</label>
-                        <input type="text" id="linkedin_access_token" name="linkedin_access_token" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="user_id">ID пользователя LinkedIn (опционально):</label>
-                        <input type="text" id="user_id" name="user_id" placeholder="Например: abcd1234">
-                    </div>
-                </div>
-                
-                <div class="section">
-                    <h3>Содержимое поста</h3>
-                    <div class="form-group">
-                        <label for="text" class="required">Текст поста:</label>
-                        <textarea id="text" name="text" required></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label for="images">Изображения (опционально):</label>
-                        <input type="file" id="images" name="images" multiple>
-                    </div>
-                </div>
-                
-                <div class="section">
-                    <h3>Настройки прокси (обязательно)</h3>
-                    <div class="form-group">
-                        <label for="proxy_host" class="required">Хост прокси:</label>
-                        <input type="text" id="proxy_host" name="proxy_host" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="proxy_port" class="required">Порт прокси:</label>
-                        <input type="number" id="proxy_port" name="proxy_port" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="proxy_username">Имя пользователя прокси (опционально):</label>
-                        <input type="text" id="proxy_username" name="proxy_username">
-                    </div>
-                    <div class="form-group">
-                        <label for="proxy_password">Пароль прокси (опционально):</label>
-                        <input type="text" id="proxy_password" name="proxy_password">
-                    </div>
-                </div>
-                
-                <button type="submit">Отправить пост</button>
-            </form>
-            
-            <div id="response" class="response"></div>
         </div>
     </div>
     
-    <script>
-        function toggleSection(sectionId) {
-            const section = document.getElementById(sectionId);
-            section.classList.toggle('hidden');
-        }
-        
-        document.getElementById('linkedinForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const formData = new FormData(this);
-            const responseDiv = document.getElementById('response');
-            responseDiv.style.display = 'block';
-            responseDiv.textContent = 'Отправка запроса...';
-            
-            try {
-                const response = await fetch('/post', {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                const data = await response.json();
-                responseDiv.textContent = JSON.stringify(data, null, 2);
-                
-                if (response.status >= 400) {
-                    responseDiv.className = 'response error-box';
-                } else {
-                    responseDiv.className = 'response';
-                }
-            } catch (error) {
-                responseDiv.textContent = 'Ошибка: ' + error.message;
-                responseDiv.className = 'response error-box';
-            }
-        });
-        
-        // Автозаполнение тестовыми данными
-        document.addEventListener('DOMContentLoaded', function() {
-            document.getElementById('linkedin_client_id').value = '860om6jxi80yk7';
-            document.getElementById('linkedin_client_secret').value = 'WPL_AP1.ARovOXo3zn47GqXx.vOc/fQ==';
-            document.getElementById('linkedin_access_token').value = 'AQXvrVELQD9ejVhtt87cHjBrzGHNuhBmdmE8KcFM5aChxhnPxgHY2fpZrdO7n8T61ReFl8x0ncZ7fPYfhyVcL1FmMfleq-oHOZ5hxhYFyP9Q9Qbj5L5_ld-oBCPjmx5FNopFMQIn5H073ZPnw2pziv6ejMch0NmsB3Uhiy-1RF9tgz_vBNBm7pMR5h389zP2e6wrPcOG3johfmtdQH064-NYuwVWHpOWKcMqpdM_rcOyaql5UUNGlynwBKhrgQF3d0zHYrz6P8GO1TrbOIQNgFx0sbvs7fwJLDfY2aR7B1EI3gQvu3g3_8-L1Usx7d_LgqWxV11GqHawS6SLqgMl-PK4JHVl9g';
-            document.getElementById('text').value = 'Тестовый пост из LinkedIn Poster API';
-            document.getElementById('proxy_host').value = '109.236.82.42';
-            document.getElementById('proxy_port').value = '9999';
-            document.getElementById('proxy_username').value = 'cpvbnd3wfl-corp.mobile-country-MD-state-618069-hold-session-session-67efeca1c7365';
-            document.getElementById('proxy_password').value = 'FxOQ5x8ym6c1GQfh';
-        });
-    </script>
+    <script src="/static/script.js"></script>
 </body>
 </html>
