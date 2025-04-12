@@ -1,16 +1,18 @@
 from app.config import Config
 from app.proxy_handler import ProxyHandler
 from app.linkedin_client import LinkedInClient
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, Request
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, Request, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
+from pydantic import BaseModel
 import uvicorn
 import os
 import json
 import logging
+import base64
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -31,10 +33,132 @@ app.add_middleware(
 # Настраиваем шаблоны
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
 
+# Модель для JSON запроса
+class LinkedInPostRequest(BaseModel):
+    client_id: str
+    client_secret: str
+    access_token: str
+    text: str
+    image: Optional[str] = None  # Base64 encoded image
+    proxy: Optional[Dict[str, str]] = None
+    user_id: Optional[str] = None
+
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
+# Новый эндпоинт для JSON API
+@app.post("/api/post", response_model=Dict[str, Any])
+async def create_post_json(request_data: LinkedInPostRequest = Body(...)):
+    try:
+        logger.info(f"Получен JSON запрос на публикацию поста. Текст: {request_data.text[:50]}...")
+        
+        # Настройка прокси (опционально)
+        proxy_settings = None
+        if request_data.proxy:
+            # Извлекаем информацию о прокси из формата http://user:pass@host:port
+            http_proxy = request_data.proxy.get("http", "")
+            https_proxy = request_data.proxy.get("https", http_proxy)
+            
+            # Используем https_proxy для настройки (или http_proxy, если https не указан)
+            proxy_url = https_proxy or http_proxy
+            
+            if proxy_url:
+                # Парсим URL прокси
+                proxy_parts = proxy_url.replace("http://", "").replace("https://", "").split("@")
+                
+                if len(proxy_parts) > 1:
+                    # Есть аутентификация
+                    auth, server = proxy_parts
+                    username, password = auth.split(":")
+                    host, port = server.split(":")
+                    
+                    proxy_settings = {
+                        "host": host,
+                        "port": int(port),
+                        "username": username,
+                        "password": password
+                    }
+                else:
+                    # Нет аутентификации
+                    server = proxy_parts[0]
+                    host, port = server.split(":")
+                    
+                    proxy_settings = {
+                        "host": host,
+                        "port": int(port)
+                    }
+                
+                logger.info(f"Используются настройки прокси: {proxy_settings['host']}:{proxy_settings['port']}")
+            else:
+                logger.info("Прокси указаны в неверном формате, запросы будут выполняться напрямую")
+        else:
+            logger.info("Прокси не указаны, запросы будут выполняться напрямую")
+        
+        # Инициализация обработчика прокси
+        proxy_handler = ProxyHandler(proxy_settings)
+        
+        # Проверка работоспособности прокси, если они указаны
+        if proxy_settings:
+            if not proxy_handler.check_proxy():
+                logger.warning("Указанные прокси не работают. Запросы будут выполняться напрямую.")
+        
+        # Инициализация клиента LinkedIn с прокси и опциональным user_id
+        linkedin_client = LinkedInClient(
+            client_id=request_data.client_id,
+            client_secret=request_data.client_secret,
+            access_token=request_data.access_token,
+            proxy_handler=proxy_handler,
+            user_id=request_data.user_id
+        )
+        
+        # Проверка подключения к LinkedIn
+        try:
+            user_profile = linkedin_client.get_user_profile()
+            logger.info(f"Успешное подключение к LinkedIn. Пользователь: {user_profile.get('id', 'Unknown')}")
+        except Exception as e:
+            logger.error(f"Ошибка при подключении к LinkedIn: {str(e)}")
+            # Не выбрасываем исключение здесь, так как get_user_profile теперь имеет механизмы обхода
+        
+        # Загрузка изображения, если оно есть в base64
+        image_urls = []
+        if request_data.image:
+            try:
+                logger.info("Декодирование и загрузка изображения из base64")
+                # Декодируем base64 в бинарные данные
+                image_data = base64.b64decode(request_data.image)
+                # Используем временное имя файла с расширением .png
+                image_filename = "image.png"
+                # Загружаем изображение
+                image_url = linkedin_client.upload_image(image_data, image_filename)
+                image_urls.append(image_url)
+                logger.info(f"Изображение успешно загружено: {image_url}")
+            except Exception as e:
+                logger.error(f"Ошибка при декодировании или загрузке изображения: {str(e)}")
+                raise HTTPException(status_code=400, detail=f"Ошибка при обработке изображения: {str(e)}")
+        
+        # Публикация поста
+        logger.info("Публикация поста в LinkedIn")
+        post_url = linkedin_client.create_post(request_data.text, image_urls)
+        logger.info(f"Пост успешно опубликован: {post_url}")
+        
+        # Извлекаем ID поста из URL
+        post_id = post_url.split("/")[-1] if "/" in post_url else post_url
+        
+        # Формируем ответ в новом формате
+        response_data = {
+            "status": "success",
+            "post_url": post_url,
+            "post_id": post_id
+        }
+        
+        return JSONResponse(content=response_data)
+    
+    except Exception as e:
+        logger.error(f"Ошибка при публикации поста: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка при публикации: {str(e)}")
+
+# Сохраняем старый эндпоинт для обратной совместимости
 @app.post("/post")
 async def create_post(
     linkedin_client_id: str = Form(...),
@@ -42,14 +166,14 @@ async def create_post(
     linkedin_access_token: str = Form(...),
     text: str = Form(...),
     images: List[UploadFile] = File(None),
-    proxy_host: Optional[str] = Form(None),  # Теперь опциональный параметр
-    proxy_port: Optional[int] = Form(None),  # Теперь опциональный параметр
+    proxy_host: Optional[str] = Form(None),
+    proxy_port: Optional[int] = Form(None),
     proxy_username: Optional[str] = Form(None),
     proxy_password: Optional[str] = Form(None),
     user_id: Optional[str] = Form(None)
 ):
     try:
-        logger.info(f"Получен запрос на публикацию поста. Текст: {text[:50]}...")
+        logger.info(f"Получен Form запрос на публикацию поста. Текст: {text[:50]}...")
         
         # Настройка прокси (теперь опционально)
         proxy_settings = None
@@ -106,35 +230,15 @@ async def create_post(
         post_url = linkedin_client.create_post(text, image_urls)
         logger.info(f"Пост успешно опубликован: {post_url}")
         
+        # Извлекаем ID поста из URL для совместимости с новым форматом
+        post_id = post_url.split("/")[-1] if "/" in post_url else post_url
+        
         response_data = {
             "status": "success",
             "message": "Пост успешно опубликован",
-            "post_url": post_url
+            "post_url": post_url,
+            "post_id": post_id
         }
-        
-        # Пример JSON для документации
-        example_request = {
-            "linkedin_client_id": "YOUR_CLIENT_ID",
-            "linkedin_client_secret": "YOUR_CLIENT_SECRET",
-            "linkedin_access_token": "YOUR_ACCESS_TOKEN",
-            "text": "Текст вашего поста",
-            "images": ["image1.jpg", "image2.jpg"],
-            "proxy_host": "proxy.example.com",  # Опциональный параметр
-            "proxy_port": 8080,                 # Опциональный параметр
-            "proxy_username": "proxy_user",
-            "proxy_password": "proxy_pass",
-            "user_id": "optional-linkedin-user-id"
-        }
-        
-        example_response = {
-            "status": "success",
-            "message": "Пост успешно опубликован",
-            "post_url": "https://www.linkedin.com/feed/update/urn:li:share:1234567890"
-        }
-        
-        # Добавляем примеры в ответ для документации
-        response_data["example_request"] = example_request
-        response_data["example_response"] = example_response
         
         return JSONResponse(content=response_data)
     
