@@ -1,6 +1,8 @@
 from typing import Dict, Optional
 import requests
 import logging
+import socket
+import socks
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +20,11 @@ class ProxyHandler:
             - port: порт прокси-сервера
             - username: имя пользователя для авторизации (опционально)
             - password: пароль для авторизации (опционально)
+            - protocol: протокол прокси (http, https, socks5, socks4) (опционально)
         """
         self.proxy_settings = proxy_settings
         self.is_proxy_working = None  # None означает, что прокси еще не проверялся
-        # Если прокси указаны, они всегда обязательны
+        # Если прокси указаны, они всегда обязательны (изменяем логику)
         self.proxy_required = proxy_settings is not None
     
     def get_proxies(self) -> Dict:
@@ -57,17 +60,13 @@ class ProxyHandler:
         
         proxy_url += f"{host}:{port}"
         
-        # Если прокси уже проверен и не работает, всегда выбрасываем исключение
-        # так как если прокси указаны, они должны работать
-        if self.is_proxy_working is False:
-            raise ValueError(f"Прокси {protocol}://{host}:{port} не работает, но является обязательным для запросов")
-            
-        # Этот код никогда не выполнится, но оставлен для совместимости
-        if self.is_proxy_working is False and not self.proxy_required:
-            logger.warning(f"Прокси {protocol}://{host}:{port} не работает, запросы будут выполняться без прокси")
-            return {}
+        # Если прокси указан и мы уже проверили, что он не работает - выбрасываем исключение
+        if self.is_proxy_working is False and self.proxy_required:
+            error_msg = f"Socket error: {protocol.upper()} connection failed"
+            raise ValueError(error_msg)
         
-        # Для SOCKS прокси нужно указать их для обоих протоколов
+        # Возвращаем настройки прокси для обоих протоколов (http и https)
+        # Для SOCKS прокси тоже указываем оба протокола
         return {
             "http": proxy_url,
             "https": proxy_url
@@ -79,28 +78,30 @@ class ProxyHandler:
         
         :param timeout: Таймаут для проверки прокси в секундах
         :return: True если прокси работает, False в противном случае
-        :raises: ValueError если прокси обязательны, но не работают
+        :raises: ValueError если прокси обязательны и не работают
         """
         if not self.proxy_settings:
             self.is_proxy_working = True
             return True
         
-        # Получаем настройки прокси без проверки работоспособности
+        # Получаем настройки прокси
         host = self.proxy_settings.get("host")
         port = self.proxy_settings.get("port")
         
         if not host or not port:
-            # Если прокси указаны, но некорректно, всегда выбрасываем исключение
-            raise ValueError("Прокси указаны некорректно, но являются обязательными для запросов")
-            # Этот код никогда не выполнится, но оставлен для совместимости
+            # Всегда выбрасываем исключение, если прокси указаны не полностью
+            error_msg = "Прокси указаны некорректно, проверьте настройки host и port"
+            logger.error(error_msg)
             self.is_proxy_working = False
+            if self.proxy_required:
+                raise ValueError(error_msg)
             return False
         
         username = self.proxy_settings.get("username")
         password = self.proxy_settings.get("password")
         protocol = self.proxy_settings.get("protocol", "http")
         
-        # Формируем URL прокси с учетом протокола
+        # Формируем URL прокси
         proxy_url = f"{protocol}://"
         
         # Добавляем учетные данные, если они предоставлены
@@ -115,8 +116,8 @@ class ProxyHandler:
         }
         
         try:
-            logger.info(f"Проверка работоспособности прокси: {proxies}")
-            # Используем LinkedIn API для проверки, так как это наиболее релевантно
+            logger.info(f"Проверка работоспособности прокси: {proxy_url}")
+            # Используем LinkedIn API для проверки
             test_url = "https://api.linkedin.com/v2/me"
             
             # Делаем запрос с таймаутом
@@ -128,20 +129,60 @@ class ProxyHandler:
                 allow_redirects=False
             )
             
-            # Если получили какой-то ответ (даже ошибку авторизации), значит прокси работает
+            # Успешное соединение
             self.is_proxy_working = True
             logger.info(f"Прокси работает, получен ответ с кодом: {response.status_code}")
             return True
             
-        except requests.RequestException as e:
-            logger.error(f"Прокси не работает: {str(e)}")
+        except requests.exceptions.ProxyError as e:
+            logger.error(f"Ошибка прокси: {str(e)}")
             self.is_proxy_working = False
             
-            # Если прокси указаны, всегда выбрасываем исключение
-            protocol = self.proxy_settings.get("protocol", "http")
-            raise ValueError(f"Прокси {protocol}://{host}:{port} не работает, но является обязательным для запросов: {str(e)}")
+            # Более точное определение типа ошибки для SOCKS5
+            error_msg = str(e)
+            if "SOCKS5" in error_msg.upper():
+                error_msg = "Socket error: SOCKS5 authentication failed"
+            elif "SOCKS4" in error_msg.upper():
+                error_msg = "Socket error: SOCKS4 connection failed"
+            elif "authentication" in error_msg.lower():
+                error_msg = f"Socket error: {protocol.upper()} authentication failed"
+            else:
+                error_msg = f"Socket error: {protocol.upper()} connection failed"
             
-            # Этот код никогда не выполнится, но оставлен для совместимости
+            # Всегда выбрасываем исключение, если прокси были указаны, но не работают
+            if self.proxy_required:
+                logger.error(f"Прокси не работает: {error_msg}")
+                raise ValueError(error_msg)
+            
+            return False
+            
+        except requests.exceptions.Timeout as e:
+            logger.error(f"Таймаут прокси-соединения: {str(e)}")
+            self.is_proxy_working = False
+            
+            error_msg = f"Socket error: {protocol.upper()} connection timeout"
+            
+            # Всегда выбрасываем исключение, если прокси были указаны, но не работают
+            if self.proxy_required:
+                raise ValueError(error_msg)
+            
+            return False
+            
+        except requests.RequestException as e:
+            logger.error(f"Ошибка запроса через прокси: {str(e)}")
+            self.is_proxy_working = False
+            
+            # Определяем тип ошибки
+            error_msg = str(e)
+            if "connection" in error_msg.lower():
+                error_msg = f"Socket error: Could not connect to {protocol.upper()} proxy"
+            else:
+                error_msg = f"Socket error: {protocol.upper()} proxy error - {error_msg}"
+            
+            # Всегда выбрасываем исключение, если прокси были указаны, но не работают
+            if self.proxy_required:
+                raise ValueError(error_msg)
+            
             return False
     
     def apply_to_session(self, session):
@@ -153,14 +194,15 @@ class ProxyHandler:
         :raises: ValueError если прокси обязательны, но не работают
         """
         # Проверяем прокси перед применением
-        if self.is_proxy_working is None:
+        if self.proxy_settings:
+            # Делаем явную проверку прокси
             self.check_proxy()
             
-        proxies = self.get_proxies()
-        if proxies:
-            session.proxies.update(proxies)
-        elif self.proxy_settings is not None:
-            # Если прокси указаны, но не работают или указаны некорректно
-            raise ValueError("Прокси указаны, но не работают или указаны некорректно")
+            # Получаем настройки прокси
+            proxies = self.get_proxies()
             
+            # Если прокси работает, применяем настройки к сессии
+            if proxies:
+                session.proxies.update(proxies)
+        
         return session

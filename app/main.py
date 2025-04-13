@@ -14,10 +14,24 @@ import os
 import json
 import logging
 import base64
+import requests
+import hashlib
+from datetime import datetime, timedelta
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Глобальная переменная для отслеживания отправленных постов
+# Структура: {client_id+access_token: {"post_id": id, "post_url": url, "timestamp": time}}
+sent_posts_cache = {}
+
+# Функция для генерации уникального ключа для каждого пользователя
+def get_user_cache_key(client_id, access_token):
+    # Берем первые 8 символов client_id и последние 8 символов access_token
+    client_prefix = client_id[:8] if client_id and len(client_id) >= 8 else client_id
+    token_suffix = access_token[-8:] if access_token and len(access_token) >= 8 else access_token
+    return f"{client_prefix}_{token_suffix}"
 
 app = FastAPI(title="LinkedIn Poster API", 
               description="API для публикации контента в LinkedIn с опциональной поддержкой прокси",
@@ -63,6 +77,85 @@ async def root(request: Request):
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
+
+# Функция для проверки прокси ПЕРЕД всеми действиями
+def test_proxy_connection(proxy_settings):
+    """
+    Выполняет прямую проверку работоспособности прокси
+    Возвращает (success, error_message)
+    """
+    if not proxy_settings:
+        return True, None
+    
+    host = proxy_settings.get("host")
+    port = proxy_settings.get("port")
+    
+    if not host or not port:
+        return False, "Прокси указаны некорректно, проверьте настройки host и port"
+    
+    username = proxy_settings.get("username")
+    password = proxy_settings.get("password")
+    protocol = proxy_settings.get("protocol", "http")
+    
+    # Формируем URL прокси
+    proxy_url = f"{protocol}://"
+    
+    # Добавляем учетные данные, если они предоставлены
+    if username and password:
+        proxy_url += f"{username}:{password}@"
+    
+    proxy_url += f"{host}:{port}"
+    
+    proxies = {
+        "http": proxy_url,
+        "https": proxy_url
+    }
+    
+    try:
+        logger.info(f"Прямая проверка работоспособности прокси: {proxy_url}")
+        # Используем LinkedIn API для проверки
+        test_url = "https://api.linkedin.com/v2/me"
+        
+        # Делаем запрос с таймаутом
+        response = requests.get(
+            test_url,
+            proxies=proxies,
+            timeout=5,
+            # Не проверяем статус ответа, только соединение
+            allow_redirects=False
+        )
+        
+        logger.info(f"Прокси работает, получен ответ с кодом: {response.status_code}")
+        return True, None
+        
+    except requests.exceptions.ProxyError as e:
+        error_msg = str(e)
+        if "SOCKS5" in error_msg.upper():
+            error_msg = "Socket error: SOCKS5 authentication failed"
+        elif "SOCKS4" in error_msg.upper():
+            error_msg = "Socket error: SOCKS4 connection failed"
+        elif "authentication" in error_msg.lower():
+            error_msg = f"Socket error: {protocol.upper()} authentication failed"
+        else:
+            error_msg = f"Socket error: {protocol.upper()} connection failed"
+        
+        logger.error(f"Ошибка прокси при прямой проверке: {error_msg}")
+        return False, error_msg
+        
+    except requests.exceptions.Timeout as e:
+        error_msg = f"Socket error: {protocol.upper()} connection timeout"
+        logger.error(f"Таймаут прокси-соединения при прямой проверке: {error_msg}")
+        return False, error_msg
+        
+    except requests.RequestException as e:
+        error_msg = str(e)
+        if "connection" in error_msg.lower():
+            error_msg = f"Socket error: Could not connect to {protocol.upper()} proxy"
+        else:
+            error_msg = f"Socket error: {protocol.upper()} proxy error - {error_msg}"
+        
+        logger.error(f"Ошибка запроса через прокси при прямой проверке: {error_msg}")
+        return False, error_msg
 
 # Новый эндпоинт для JSON API
 @app.post("/api/post", response_model=Dict[str, Any])
@@ -135,27 +228,19 @@ async def create_post_json(request_data: LinkedInPostRequest = Body(...)):
         else:
             logger.info("Прокси не указаны, запросы будут выполняться напрямую")
         
-        # Инициализация обработчика прокси
-        proxy_handler = ProxyHandler(proxy_settings)
-        
-        # Проверка работоспособности прокси, если они указаны
+        # *** КРИТИЧЕСКИ ВАЖНО: Проверяем прокси перед всеми действиями ***
         if proxy_settings:
-            try:
-                if not proxy_handler.check_proxy():
-                    error_msg = "Указанные прокси не работают"
-                    logger.error(error_msg)
-                    error_response = {
-                        "error": f"Proxy connection test failed: {error_msg}",
-                        "status": "error"
-                    }
-                    return JSONResponse(status_code=500, content=error_response)
-            except ValueError as e:
-                logger.error(f"Ошибка прокси: {str(e)}")
+            # Выполняем прямую проверку прокси перед созданием всех остальных объектов
+            proxy_working, proxy_error = test_proxy_connection(proxy_settings)
+            if not proxy_working:
                 error_response = {
-                    "error": f"Proxy connection test failed: {str(e)}",
-                    "status": "error"
+                    "status": "error",
+                    "error": f"Proxy connection test failed: {proxy_error}"
                 }
                 return JSONResponse(status_code=500, content=error_response)
+        
+        # Инициализация обработчика прокси
+        proxy_handler = ProxyHandler(proxy_settings)
         
         # Инициализация клиента LinkedIn с прокси и опциональным user_id
         linkedin_client = LinkedInClient(
@@ -179,8 +264,8 @@ async def create_post_json(request_data: LinkedInPostRequest = Body(...)):
                 "request": {
                     "credentials": {
                         "client_id": request_data.client_id,
-                        "client_secret": "***" + request_data.client_secret[-4:],
-                        "access_token": request_data.access_token[:10] + "***"
+                        "client_secret": "***" + request_data.client_secret[-4:] if len(request_data.client_secret) > 4 else "***",
+                        "access_token": request_data.access_token[:10] + "***" if len(request_data.access_token) > 10 else "***"
                     },
                     "text": request_data.text,
                     "has_image": request_data.image is not None,
@@ -210,8 +295,8 @@ async def create_post_json(request_data: LinkedInPostRequest = Body(...)):
                     "request": {
                         "credentials": {
                             "client_id": request_data.client_id,
-                            "client_secret": "***" + request_data.client_secret[-4:],
-                            "access_token": request_data.access_token[:10] + "***"
+                            "client_secret": "***" + request_data.client_secret[-4:] if len(request_data.client_secret) > 4 else "***",
+                            "access_token": request_data.access_token[:10] + "***" if len(request_data.access_token) > 10 else "***"
                         },
                         "text": request_data.text,
                         "has_image": request_data.image is not None,
@@ -223,11 +308,51 @@ async def create_post_json(request_data: LinkedInPostRequest = Body(...)):
         # Публикация поста
         logger.info("Публикация поста в LinkedIn")
         try:
+            # *** ПОВТОРНАЯ ПРОВЕРКА прокси перед публикацией ***
+            if proxy_settings:
+                proxy_working, proxy_error = test_proxy_connection(proxy_settings)
+                if not proxy_working:
+                    error_response = {
+                        "status": "error",
+                        "error": f"Proxy connection test failed: {proxy_error}"
+                    }
+                    return JSONResponse(status_code=500, content=error_response)
+            
+            # Генерируем ключ для проверки кэша
+            cache_key = get_user_cache_key(request_data.client_id, request_data.access_token)
+            
+            # Генерируем хэш текста поста для проверки дублирования
+            text_hash = hashlib.md5(request_data.text.encode()).hexdigest()
+            
+            # Проверяем, не публиковали ли мы уже такой пост недавно
+            current_time = datetime.now()
+            
+            if cache_key in sent_posts_cache:
+                cache_entry = sent_posts_cache[cache_key]
+                # Если такой же текст поста был опубликован менее 5 минут назад
+                if cache_entry.get("text_hash") == text_hash and \
+                   current_time - cache_entry.get("timestamp", current_time - timedelta(minutes=10)) < timedelta(minutes=5):
+                    logger.warning(f"Обнаружена попытка повторной публикации того же поста в течение 5 минут")
+                    error_response = {
+                        "status": "error", 
+                        "error": "Duplicate post detected. Please wait at least 5 minutes before posting the same content again."
+                    }
+                    return JSONResponse(status_code=400, content=error_response)
+            
+            # Создаем пост в LinkedIn
             post_url = linkedin_client.create_post(request_data.text, image_urls)
             logger.info(f"Пост успешно опубликован: {post_url}")
             
             # Извлекаем ID поста из URL
             post_id = post_url.split("/")[-1] if "/" in post_url else post_url
+            
+            # Обновляем кэш отправленных постов
+            sent_posts_cache[cache_key] = {
+                "post_id": post_id,
+                "post_url": post_url,
+                "text_hash": text_hash,
+                "timestamp": current_time
+            }
             
             # Формируем ответ в новом формате
             response_data = {
@@ -237,8 +362,8 @@ async def create_post_json(request_data: LinkedInPostRequest = Body(...)):
                 "request": {
                     "credentials": {
                         "client_id": request_data.client_id,
-                        "client_secret": "***" + request_data.client_secret[-4:],
-                        "access_token": request_data.access_token[:10] + "***"
+                        "client_secret": "***" + request_data.client_secret[-4:] if len(request_data.client_secret) > 4 else "***",
+                        "access_token": request_data.access_token[:10] + "***" if len(request_data.access_token) > 10 else "***"
                     },
                     "text": request_data.text,
                     "has_image": request_data.image is not None,
@@ -253,14 +378,25 @@ async def create_post_json(request_data: LinkedInPostRequest = Body(...)):
             return JSONResponse(content=response_data)
         except Exception as e:
             logger.error(f"Ошибка при публикации поста: {str(e)}")
+            
+            # Проверяем, не связана ли ошибка с прокси
+            if proxy_settings and ("proxy" in str(e).lower() or "socket" in str(e).lower() or "connect" in str(e).lower()):
+                proxy_working, proxy_error = test_proxy_connection(proxy_settings)
+                if not proxy_working:
+                    error_response = {
+                        "status": "error",
+                        "error": f"Proxy connection test failed: {proxy_error}"
+                    }
+                    return JSONResponse(status_code=500, content=error_response)
+            
             error_response = {
                 "status": "error",
                 "error": f"Post creation failed: {str(e)}",
                 "request": {
                     "credentials": {
                         "client_id": request_data.client_id,
-                        "client_secret": "***" + request_data.client_secret[-4:],
-                        "access_token": request_data.access_token[:10] + "***"
+                        "client_secret": "***" + request_data.client_secret[-4:] if len(request_data.client_secret) > 4 else "***",
+                        "access_token": request_data.access_token[:10] + "***" if len(request_data.access_token) > 10 else "***"
                     },
                     "text": request_data.text,
                     "has_image": request_data.image is not None,
@@ -271,14 +407,115 @@ async def create_post_json(request_data: LinkedInPostRequest = Body(...)):
     
     except Exception as e:
         logger.error(f"Ошибка при публикации поста: {str(e)}")
+        
+        # Проверяем, не связана ли ошибка с прокси
+        if hasattr(request_data, 'proxy') and request_data.proxy:
+            # Извлекаем настройки прокси для проверки
+            proxy_settings = {}
+            if isinstance(request_data.proxy, dict):
+                # Сложная логика извлечения настроек прокси из словаря
+                http_proxy = request_data.proxy.get("http", "")
+                https_proxy = request_data.proxy.get("https", http_proxy)
+                socks_proxy = request_data.proxy.get("socks5", "")
+                proxy_url = socks_proxy or https_proxy or http_proxy
+                
+                if proxy_url:
+                    # Упрощенное извлечение настроек для проверки
+                    # Это не полная логика, но достаточная для простой проверки
+                    try:
+                        protocol = "http"
+                        if isinstance(proxy_url, str):
+                            if "socks5://" in proxy_url:
+                                protocol = "socks5"
+                            elif "socks4://" in proxy_url:
+                                protocol = "socks4"
+                            elif "https://" in proxy_url:
+                                protocol = "https"
+                                
+                        # Простая проверка - удаляем протоколы
+                        clean_url = proxy_url.replace("socks5://", "").replace("socks4://", "").replace("https://", "").replace("http://", "")
+                        
+                        # Извлекаем аутентификацию, если есть
+                        if "@" in clean_url:
+                            auth, server = clean_url.split("@", 1)
+                            if ":" in auth and ":" in server:
+                                username, password = auth.split(":", 1)
+                                host, port = server.split(":", 1)
+                                proxy_settings = {
+                                    "host": host,
+                                    "port": int(port),
+                                    "username": username,
+                                    "password": password,
+                                    "protocol": protocol
+                                }
+                        elif ":" in clean_url:
+                            host, port = clean_url.split(":", 1)
+                            proxy_settings = {
+                                "host": host,
+                                "port": int(port),
+                                "protocol": protocol
+                            }
+                    except Exception:
+                        # Если не удалось распарсить, пропускаем проверку
+                        pass
+            elif isinstance(request_data.proxy, str):
+                # Извлечение настроек из строки
+                proxy_url = request_data.proxy
+                try:
+                    protocol = "http"
+                    if proxy_url.startswith("socks5://"):
+                        protocol = "socks5"
+                        proxy_url = proxy_url.replace("socks5://", "")
+                    elif proxy_url.startswith("socks4://"):
+                        protocol = "socks4"
+                        proxy_url = proxy_url.replace("socks4://", "")
+                    elif proxy_url.startswith("https://"):
+                        protocol = "https"
+                        proxy_url = proxy_url.replace("https://", "")
+                    elif proxy_url.startswith("http://"):
+                        proxy_url = proxy_url.replace("http://", "")
+                        
+                    # Парсим URL прокси
+                    if "@" in proxy_url:
+                        auth, server = proxy_url.split("@", 1)
+                        if ":" in auth and ":" in server:
+                            username, password = auth.split(":", 1)
+                            host, port = server.split(":", 1)
+                            proxy_settings = {
+                                "host": host,
+                                "port": int(port),
+                                "username": username,
+                                "password": password,
+                                "protocol": protocol
+                            }
+                    elif ":" in proxy_url:
+                        host, port = proxy_url.split(":", 1)
+                        proxy_settings = {
+                            "host": host,
+                            "port": int(port),
+                            "protocol": protocol
+                        }
+                except Exception:
+                    # Если не удалось распарсить, пропускаем проверку
+                    pass
+                
+            if proxy_settings and ("proxy" in str(e).lower() or "socket" in str(e).lower() or "connect" in str(e).lower()):
+                proxy_working, proxy_error = test_proxy_connection(proxy_settings)
+                if not proxy_working:
+                    error_response = {
+                        "status": "error",
+                        "error": f"Proxy connection test failed: {proxy_error}"
+                    }
+                    return JSONResponse(status_code=500, content=error_response)
+        
         error_response = {
             "status": "error",
             "error": str(e),
             "request": {
                 "credentials": {
                     "client_id": request_data.client_id,
-                    "client_secret": "***" + request_data.client_secret[-4:],
-                    "access_token": request_data.access_token[:10] + "***"
+                    "client_secret": "***" + request_data.client_secret[-4:] if len(request_data.client_secret) > 4 else "***",
+                    "access_token": request_data.access_token[:10] + "***" if len(request_data.access_token) > 10 else "***"
                 },
                 "text": request_data.text,
                 "has_image": request_data.image is not None,
@@ -315,30 +552,20 @@ async def create_post(
                 "protocol": "http"  # По умолчанию используем HTTP протокол
             }
             logger.info(f"Используются настройки прокси: {proxy_host}:{proxy_port}")
+            
+            # Проверяем работоспособность прокси перед всем остальным
+            proxy_working, proxy_error = test_proxy_connection(proxy_settings)
+            if not proxy_working:
+                error_response = {
+                    "status": "error",
+                    "error": f"Proxy connection test failed: {proxy_error}"
+                }
+                return JSONResponse(status_code=500, content=error_response)
         else:
             logger.info("Прокси не указаны, запросы будут выполняться напрямую")
         
         # Инициализация обработчика прокси
         proxy_handler = ProxyHandler(proxy_settings)
-        
-        # Проверка работоспособности прокси, если они указаны
-        if proxy_settings:
-            try:
-                if not proxy_handler.check_proxy():
-                    error_msg = "Указанные прокси не работают"
-                    logger.error(error_msg)
-                    error_response = {
-                        "status": "error",
-                        "error": f"Proxy connection test failed: {error_msg}"
-                    }
-                    return JSONResponse(status_code=500, content=error_response)
-            except ValueError as e:
-                logger.error(f"Ошибка прокси: {str(e)}")
-                error_response = {
-                    "status": "error",
-                    "error": f"Proxy connection test failed: {str(e)}"
-                }
-                return JSONResponse(status_code=500, content=error_response)
         
         # Инициализация клиента LinkedIn с прокси и опциональным user_id
         linkedin_client = LinkedInClient(
@@ -369,12 +596,33 @@ async def create_post(
                 if image.filename:  # Проверяем, что файл действительно был загружен
                     logger.info(f"Загрузка изображения {i+1}: {image.filename}")
                     try:
+                        # Повторная проверка прокси перед каждой загрузкой
+                        if proxy_settings:
+                            proxy_working, proxy_error = test_proxy_connection(proxy_settings)
+                            if not proxy_working:
+                                error_response = {
+                                    "status": "error",
+                                    "error": f"Proxy connection test failed before image upload: {proxy_error}"
+                                }
+                                return JSONResponse(status_code=500, content=error_response)
+                                
                         image_data = await image.read()
                         image_url = linkedin_client.upload_image(image_data, image.filename)
                         image_urls.append(image_url)
                         logger.info(f"Изображение {i+1} успешно загружено: {image_url}")
                     except Exception as e:
                         logger.error(f"Ошибка при загрузке изображения {i+1}: {str(e)}")
+                        
+                        # Проверяем, не связана ли ошибка с прокси
+                        if proxy_settings and ("proxy" in str(e).lower() or "socket" in str(e).lower() or "connect" in str(e).lower()):
+                            proxy_working, proxy_error = test_proxy_connection(proxy_settings)
+                            if not proxy_working:
+                                error_response = {
+                                    "status": "error",
+                                    "error": f"Proxy connection test failed during image upload: {proxy_error}"
+                                }
+                                return JSONResponse(status_code=500, content=error_response)
+                                
                         error_response = {
                             "status": "error",
                             "error": f"Image upload failed: {str(e)}"
@@ -384,11 +632,51 @@ async def create_post(
         # Публикация поста
         logger.info("Публикация поста в LinkedIn")
         try:
+            # Последняя проверка прокси перед публикацией
+            if proxy_settings:
+                proxy_working, proxy_error = test_proxy_connection(proxy_settings)
+                if not proxy_working:
+                    error_response = {
+                        "status": "error",
+                        "error": f"Proxy connection test failed before post creation: {proxy_error}"
+                    }
+                    return JSONResponse(status_code=500, content=error_response)
+            
+            # Генерируем ключ для проверки кэша
+            cache_key = get_user_cache_key(linkedin_client_id, linkedin_access_token)
+            
+            # Генерируем хэш текста поста для проверки дублирования
+            text_hash = hashlib.md5(text.encode()).hexdigest()
+            
+            # Проверяем, не публиковали ли мы уже такой пост недавно
+            current_time = datetime.now()
+            
+            if cache_key in sent_posts_cache:
+                cache_entry = sent_posts_cache[cache_key]
+                # Если такой же текст поста был опубликован менее 5 минут назад
+                if cache_entry.get("text_hash") == text_hash and \
+                current_time - cache_entry.get("timestamp", current_time - timedelta(minutes=10)) < timedelta(minutes=5):
+                    logger.warning(f"Обнаружена попытка повторной публикации того же поста в течение 5 минут")
+                    error_response = {
+                        "status": "error", 
+                        "error": "Duplicate post detected. Please wait at least 5 minutes before posting the same content again."
+                    }
+                    return JSONResponse(status_code=400, content=error_response)
+            
+            # Создаем пост в LinkedIn
             post_url = linkedin_client.create_post(text, image_urls)
             logger.info(f"Пост успешно опубликован: {post_url}")
             
             # Извлекаем ID поста из URL для совместимости с новым форматом
             post_id = post_url.split("/")[-1] if "/" in post_url else post_url
+            
+            # Обновляем кэш отправленных постов
+            sent_posts_cache[cache_key] = {
+                "post_id": post_id,
+                "post_url": post_url,
+                "text_hash": text_hash,
+                "timestamp": current_time
+            }
             
             response_data = {
                 "status": "success",
@@ -400,12 +688,23 @@ async def create_post(
             return JSONResponse(content=response_data)
         except Exception as e:
             logger.error(f"Ошибка при публикации поста: {str(e)}")
+            
+            # Проверяем, не связана ли ошибка с прокси
+            if proxy_settings and ("proxy" in str(e).lower() or "socket" in str(e).lower() or "connect" in str(e).lower()):
+                proxy_working, proxy_error = test_proxy_connection(proxy_settings)
+                if not proxy_working:
+                    error_response = {
+                        "status": "error",
+                        "error": f"Proxy connection test failed during post creation: {proxy_error}"
+                    }
+                    return JSONResponse(status_code=500, content=error_response)
+                    
             error_response = {
                 "status": "error",
                 "error": f"Post creation failed: {str(e)}"
             }
             return JSONResponse(status_code=500, content=error_response)
-    
+                        
     except Exception as e:
         logger.error(f"Ошибка при публикации поста: {str(e)}")
         error_response = {

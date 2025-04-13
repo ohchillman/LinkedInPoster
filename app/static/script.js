@@ -84,6 +84,22 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     function sendPostRequest(requestData) {
+        // Сохраняем копию запроса для отображения в случае ошибки
+        const requestCopy = JSON.parse(JSON.stringify(requestData));
+        
+        // Скрываем чувствительные данные в копии для отображения
+        if (requestCopy.client_secret && requestCopy.client_secret.length > 4) {
+            requestCopy.client_secret = "***" + requestCopy.client_secret.substring(requestCopy.client_secret.length - 4);
+        } else {
+            requestCopy.client_secret = "***";
+        }
+        
+        if (requestCopy.access_token && requestCopy.access_token.length > 10) {
+            requestCopy.access_token = requestCopy.access_token.substring(0, 10) + "***";
+        } else if (requestCopy.access_token) {
+            requestCopy.access_token = "***";
+        }
+        
         fetch('/api/post', {
             method: 'POST',
             headers: {
@@ -91,8 +107,24 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             body: JSON.stringify(requestData)
         })
-        .then(response => response.json())
-        .then(data => {
+        .then(response => {
+            // Обрабатываем ответ как текст сначала, чтобы видеть ошибки синтаксиса JSON
+            return response.text().then(text => {
+                try {
+                    const data = JSON.parse(text);
+                    return { status: response.status, data };
+                } catch (e) {
+                    return { 
+                        status: response.status, 
+                        data: { 
+                            status: "error", 
+                            error: "Invalid JSON response: " + text
+                        } 
+                    };
+                }
+            });
+        })
+        .then(result => {
             // Hide loading spinner
             document.getElementById('loading').style.display = 'none';
             document.getElementById('submitBtn').disabled = false;
@@ -100,6 +132,11 @@ document.addEventListener('DOMContentLoaded', function() {
             // Show response
             const responseElement = document.getElementById('response');
             responseElement.style.display = 'block';
+            
+            const { status, data } = result;
+            
+            // Always show the request details
+            document.getElementById('requestDetails').textContent = JSON.stringify(requestCopy, null, 2);
             
             if (data.status === 'success') {
                 responseElement.className = 'response success';
@@ -111,20 +148,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 postLink.href = data.post_url;
                 postLink.textContent = 'View Post';
                 postLink.style.display = 'block';
+                
+                // Display response details
+                document.getElementById('responseDetails').textContent = JSON.stringify(data.response || data, null, 2);
             } else {
                 responseElement.className = 'response error';
                 document.getElementById('responseTitle').textContent = 'Error';
-                document.getElementById('responseMessage').textContent = data.message;
+                document.getElementById('responseMessage').textContent = data.error || data.message || "Unknown error";
                 document.getElementById('postLink').style.display = 'none';
-            }
-            
-            // Display request and response details
-            if (data.request) {
-                document.getElementById('requestDetails').textContent = JSON.stringify(data.request, null, 2);
-            }
-            
-            if (data.response) {
-                document.getElementById('responseDetails').textContent = JSON.stringify(data.response, null, 2);
+                
+                // Display error response
+                document.getElementById('responseDetails').textContent = JSON.stringify(data, null, 2);
             }
         })
         .catch(error => {
@@ -140,9 +174,11 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('responseMessage').textContent = 'Failed to connect to the server: ' + error.message;
             document.getElementById('postLink').style.display = 'none';
             
-            // Clear request and response details
-            document.getElementById('requestDetails').textContent = '';
-            document.getElementById('responseDetails').textContent = '';
+            // Display request details
+            document.getElementById('requestDetails').textContent = JSON.stringify(requestCopy, null, 2);
+            
+            // Display error details
+            document.getElementById('responseDetails').textContent = JSON.stringify({ error: error.message }, null, 2);
         });
     }
 });

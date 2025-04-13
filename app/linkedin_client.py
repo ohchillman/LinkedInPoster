@@ -28,6 +28,11 @@ class LinkedInClient:
         Выполняет запрос к API LinkedIn с учетом настроек прокси
         """
         url = f"{self.base_url}{endpoint}"
+        
+        # Проверяем, что прокси работает, если он настроен
+        if self.proxy_handler.proxy_settings:
+            self.proxy_handler.check_proxy()  # Это выбросит исключение, если прокси не работает
+            
         proxies = self.proxy_handler.get_proxies()
         
         logger.info(f"Отправка {method} запроса к {url}")
@@ -90,9 +95,8 @@ class LinkedInClient:
             except Exception as extract_error:
                 logger.error(f"Не удалось извлечь ID пользователя из токена: {str(extract_error)}")
             
-            # Если не удалось получить ID пользователя, используем фиктивный ID
-            logger.warning("Используем фиктивный ID пользователя для продолжения работы")
-            return {"id": "DUMMY_USER_ID"}
+            # Если не удалось получить ID пользователя, выбрасываем исключение чтобы не продолжать
+            raise Exception(f"Не удалось получить ID пользователя: {str(e)}")
     
     def _extract_user_id_from_token(self):
         """
@@ -127,6 +131,10 @@ class LinkedInClient:
         """
         try:
             logger.info(f"Загрузка изображения: {filename}")
+            
+            # Проверяем, что прокси работает, если он настроен
+            if self.proxy_handler.proxy_settings:
+                self.proxy_handler.check_proxy()  # Это выбросит исключение, если прокси не работает
             
             # Получаем ID пользователя
             user_profile = self.get_user_profile()
@@ -250,6 +258,10 @@ class LinkedInClient:
         try:
             logger.info(f"Создание поста в LinkedIn. Текст: {text[:50]}...")
             
+            # Проверяем, что прокси работает, если он настроен
+            if self.proxy_handler.proxy_settings:
+                self.proxy_handler.check_proxy()  # Это выбросит исключение, если прокси не работает
+            
             # Получаем ID пользователя
             user_profile = self.get_user_profile()
             if "id" not in user_profile:
@@ -313,4 +325,5 @@ class LinkedInClient:
             
         except Exception as e:
             logger.error(f"Ошибка при создании поста: {str(e)}")
-            raise Exception(f"Не удалось создать пост в LinkedIn. Убедитесь, что токен доступа действителен и имеет разрешение w_member_social. Ошибка: {str(e)}")
+            # Перебрасываем исключение дальше, чтобы его перехватил вызывающий код
+            raise Exception(f"Не удалось создать пост в LinkedIn. Ошибка: {str(e)}")
